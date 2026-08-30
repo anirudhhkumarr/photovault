@@ -91,16 +91,37 @@ export async function saveFileToStorageFolder(filename, data) {
 }
 
 /**
- * Universal downloader / exporter for Safari and all browsers.
+ * Universal downloader / exporter safe for Safari, Chrome, Edge, and iOS.
+ * Prevents macOS "(null) folder" permission errors.
  */
-export function downloadFileDirectly(filename, data, mimeType = 'video/mp4') {
-  const blob = data instanceof Blob ? data : new Blob([data], { type: mimeType });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
+export function downloadFileDirectly(filename, data, mimeType = 'image/jpeg') {
+  try {
+    const blob = data instanceof Blob ? data : new Blob([data], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = url;
+    a.setAttribute('download', filename);
+    a.setAttribute('target', '_self');
+    
+    document.body.appendChild(a);
+
+    // Native mouse event dispatch for Safari security clearance
+    const evt = new MouseEvent('click', {
+      view: window,
+      bubbles: true,
+      cancelable: true
+    });
+    a.dispatchEvent(evt);
+
+    // Keep blob URL alive until user selects save location in macOS
+    setTimeout(() => {
+      if (document.body.contains(a)) {
+        document.body.removeChild(a);
+      }
+      URL.revokeObjectURL(url);
+    }, 60000);
+  } catch (err) {
+    console.error('downloadFileDirectly error:', err);
+  }
 }

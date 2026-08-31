@@ -424,14 +424,28 @@ export default function App() {
         const existingPhotos = await getPhotos();
         const sceneClusters = new Map();
 
+        // Track estimated original sizes to limit container size
+        const MAX_CONTAINER_SIZE = 150 * 1024 * 1024; // 150 MB limit
+        const groupSizeMap = new Map();
+        existingPhotos.forEach(p => {
+          groupSizeMap.set(p.videoId, (groupSizeMap.get(p.videoId) || 0) + p.size);
+        });
+
+        const canGroupAccept = (groupId, additionalSize) => {
+          const currentSize = groupSizeMap.get(groupId) || 0;
+          return (currentSize + additionalSize) <= MAX_CONTAINER_SIZE;
+        };
+
         for (const item of processedBatch) {
           let matchedGroupId = null;
 
           // 1. Exact Duplicate match
           for (const p of existingPhotos) {
             if (p.contentHash && p.contentHash === item.contentHash) {
-              matchedGroupId = p.videoId;
-              break;
+              if (canGroupAccept(p.videoId, item.size)) {
+                matchedGroupId = p.videoId;
+                break;
+              }
             }
           }
 
@@ -439,8 +453,10 @@ export default function App() {
           if (!matchedGroupId && item.fingerprint) {
             for (const p of existingPhotos) {
               if (p.fingerprint && arePhotosInSameScene(item.fingerprint, p.fingerprint)) {
-                matchedGroupId = p.videoId;
-                break;
+                if (canGroupAccept(p.videoId, item.size)) {
+                  matchedGroupId = p.videoId;
+                  break;
+                }
               }
             }
           }
@@ -450,8 +466,10 @@ export default function App() {
             for (const prev of processedBatch) {
               if (prev !== item && prev.videoId && prev.fingerprint) {
                 if (arePhotosInSameScene(item.fingerprint, prev.fingerprint)) {
-                  matchedGroupId = prev.videoId;
-                  break;
+                  if (canGroupAccept(prev.videoId, item.size)) {
+                    matchedGroupId = prev.videoId;
+                    break;
+                  }
                 }
               }
             }
@@ -459,6 +477,9 @@ export default function App() {
 
           const targetGroupId = matchedGroupId || `group_${Date.now()}_${Math.random().toString(36).substring(7)}`;
           item.videoId = targetGroupId;
+
+          // Update size tracking
+          groupSizeMap.set(targetGroupId, (groupSizeMap.get(targetGroupId) || 0) + item.size);
 
           if (!sceneClusters.has(targetGroupId)) {
             sceneClusters.set(targetGroupId, []);

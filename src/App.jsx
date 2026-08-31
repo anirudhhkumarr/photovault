@@ -33,6 +33,7 @@ import {
 export default function App() {
   const [photos, setPhotos] = useState([]);
   const [totalPhotosCount, setTotalPhotosCount] = useState(0);
+  const [cloudContainers, setCloudContainers] = useState([]);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [isLoadingData, setIsLoadingData] = useState(false);
@@ -68,10 +69,97 @@ export default function App() {
     try {
       setIsLoadingData(true);
       const currentPage = resetPage ? 0 : page;
-      const count = await getPhotosCount();
-      const p = await getPagedPhotos(currentPage * PAGE_SIZE, PAGE_SIZE);
-      const g = await getVideos();
       
+      if (cloudContainers.length > 0) {
+        // VIRTUALIZED JIT LOADING
+        const targetStart = currentPage * PAGE_SIZE;
+        const targetEnd = targetStart + PAGE_SIZE;
+        
+        const containersToFetch = cloudContainers.filter(c => 
+          !c.loaded && 
+          !(c.endIndex <= targetStart || c.startIndex >= targetEnd)
+        );
+        
+        const token = getAccessToken();
+        if (containersToFetch.length > 0 && token) {
+          const newContainers = [...cloudContainers];
+          
+          for (const c of containersToFetch) {
+            setProgress(`Fetching metadata for ${c.groupId}...`);
+            let fileIdToFetch = c.fileId;
+            if (!fileIdToFetch) {
+               fileIdToFetch = await getFileIdByName(`metadata_${c.groupId}_${c.count}.json`, token);
+            }
+            if (fileIdToFetch) {
+              const dbData = await downloadFileFromGoogleDrive(fileIdToFetch, token);
+              if (dbData) {
+                const text = new TextDecoder().decode(dbData);
+                await importContainerMetadata(text);
+                
+                // Mark loaded
+                const idx = newContainers.findIndex(x => x.groupId === c.groupId);
+                if (idx !== -1) newContainers[idx].loaded = true;
+              }
+            }
+          }
+          setCloudContainers(newContainers);
+          setProgress('');
+        }
+        
+        // Populate the `photos` array accurately based on offsets
+        const allDbPhotos = await getPhotos();
+        const newPhotos = resetPage ? new Array(totalPhotosCount).fill(null) : [...photos];
+        
+        // Map photos by groupId
+        const photosByGroup = {};
+        for (const p of allDbPhotos) {
+           if (!photosByGroup[p.videoId]) photosByGroup[p.videoId] = [];
+           photosByGroup[p.videoId].push(p);
+        }
+        
+        // We iterate over the latest state of cloudContainers (so we use newContainers if defined, otherwise cloudContainers)
+        const activeContainers = containersToFetch.length > 0 ? [...cloudContainers] : cloudContainers;
+        if (containersToFetch.length > 0) {
+           for (const fetched of containersToFetch) {
+             const idx = activeContainers.findIndex(x => x.groupId === fetched.groupId);
+             if (idx !== -1) activeContainers[idx].loaded = true;
+           }
+        }
+        
+        for (const c of activeContainers) {
+           if (c.loaded && photosByGroup[c.groupId]) {
+             // sort by frameIndex so they map 1:1 to their offset
+             const groupPhotos = photosByGroup[c.groupId].sort((a,b) => a.frameIndex - b.frameIndex);
+             for (let i = 0; i < groupPhotos.length; i++) {
+                if (c.startIndex + i < newPhotos.length) {
+                   newPhotos[c.startIndex + i] = groupPhotos[i];
+                }
+             }
+           }
+        }
+        
+        setPhotos(newPhotos);
+        setHasMore((currentPage * PAGE_SIZE) + PAGE_SIZE < totalPhotosCount);
+      } else {
+        // Fallback for local-only un-synced data
+        const count = await getPhotosCount();
+        const p = await getPagedPhotos(currentPage * PAGE_SIZE, PAGE_SIZE);
+        setTotalPhotosCount(count);
+        setHasMore((currentPage * PAGE_SIZE) + p.length < count);
+
+        if (resetPage) {
+          setPhotos(p || []);
+          setPage(0);
+        } else {
+          setPhotos(prev => {
+            const existingIds = new Set(prev.map(i => i && i.id));
+            const newItems = p.filter(i => !existingIds.has(i.id));
+            return [...prev, ...newItems];
+          });
+        }
+      }
+
+      const g = await getVideos();
       const validGroupIds = new Set((await getPhotos()).map(item => item.videoId));
       const activeGroups = [];
       for (const group of g) {
@@ -81,22 +169,6 @@ export default function App() {
           await deleteVideoFromDB(group.id);
         }
       }
-
-      setTotalPhotosCount(count);
-      setHasMore((currentPage * PAGE_SIZE) + p.length < count);
-
-      if (resetPage) {
-        setPhotos(p || []);
-        setPage(0);
-      } else {
-        setPhotos(prev => {
-          // Prevent duplicates when incrementally loading
-          const existingIds = new Set(prev.map(i => i.id));
-          const newItems = p.filter(i => !existingIds.has(i.id));
-          return [...prev, ...newItems];
-        });
-      }
-      
       setGroups(activeGroups);
     } catch (e) {
       console.error('loadData error:', e);
@@ -139,7 +211,28 @@ export default function App() {
     try {
       setProgress(`Saving metadata for container ${groupId}...`);
       const dbJson = await exportContainerMetadata(groupId);
-      await uploadOrUpdateFileInGoogleDrive(`metadata_${groupId}.json`, dbJson, 'application/json', token);
+      const parsed = JSON.parse(dbJson);
+      const count = parsed.photos ? parsed.photos.length : 0;
+      await uploadOrUpdateFileInGoogleDrive(`metadata_${groupId}_${count}.json`, dbJson, 'application/json', token);
+      
+      setCloudContainers(prev => {
+         const newContainer = { groupId, count, loaded: true, fileId: null };
+         // Append new ones at front
+         const newList = [newContainer, ...prev];
+         let offset = 0;
+         for (const c of newList) {
+           c.startIndex = offset;
+           c.endIndex = offset + c.count;
+           offset += c.count;
+         }
+         setTotalPhotosCount(offset);
+         return newList;
+      });
+      
+      setPhotos(prev => {
+         return [...new Array(count).fill(null), ...prev];
+      });
+      
     } catch (e) {
       console.error(`Failed to save metadata for ${groupId}:`, e);
       setErrorMessage(e.message || String(e));
@@ -164,19 +257,38 @@ export default function App() {
 
       if (!forceReindex) {
         const metadataFiles = cloudFiles.filter(f => f.name.startsWith('metadata_') && f.name.endsWith('.json'));
+        
+        let containers = [];
+        
         for (const file of metadataFiles) {
-          try {
-            setProgress(`Restoring metadata: ${file.name}...`);
-            const dbData = await downloadFileFromGoogleDrive(file.id, token);
-            if (dbData) {
-              const text = new TextDecoder().decode(dbData);
-              await importContainerMetadata(text);
-            }
-          } catch (err) {
-            console.warn(`Failed to restore ${file.name}:`, err);
+          const match = file.name.match(/^metadata_(.+?)_(\d+)\.json$/);
+          
+          if (match) {
+            const groupId = match[1];
+            const count = parseInt(match[2], 10);
+            
+            containers.push({
+              groupId,
+              count,
+              fileId: file.id,
+              loaded: false
+            });
           }
         }
-        await loadData();
+        
+        containers.sort((a, b) => b.groupId.localeCompare(a.groupId));
+        
+        let offset = 0;
+        for (const c of containers) {
+          c.startIndex = offset;
+          c.endIndex = offset + c.count;
+          offset += c.count;
+        }
+        
+        setCloudContainers(containers);
+        setTotalPhotosCount(offset);
+        setPhotos(new Array(offset).fill(null));
+        setPage(0); // This will naturally trigger loadData via useEffect
       }
 
       let importedCount = 0;
@@ -187,11 +299,14 @@ export default function App() {
         const isMp4 = file.name.endsWith('.mp4');
         const existingVideo = existingVideos.find(v => v.id === groupId);
 
-        if (isMp4 && (forceReindex || !existingIds.has(groupId) || (existingVideo && !existingVideo.blob))) {
-          setProgress(`Restoring vault container: ${file.name}...`);
-          const fileData = await downloadFileFromGoogleDrive(file.id, token);
-          if (fileData) {
-            if (forceReindex || !existingIds.has(groupId)) {
+        // Only download the heavy MP4 container if we are forcefully rebuilding the DB
+        // or if it's completely missing from DB metadata.
+        if (isMp4 && (forceReindex || !existingIds.has(groupId))) {
+          setProgress(`Restoring vault container metadata: ${file.name}...`);
+          
+          if (forceReindex) {
+            const fileData = await downloadFileFromGoogleDrive(file.id, token);
+            if (fileData) {
               const frames = await extractAllFramesFromVideo(fileData, 50);
               if (frames.length > 0) {
                 for (let i = 0; i < frames.length; i++) {
@@ -216,10 +331,15 @@ export default function App() {
                 
                 await saveContainerMetadataToDrive(groupId);
               }
-            } else {
-              // Metadata was imported, just cache the blob
-              await updateVideo(groupId, { blob: fileData });
             }
+          } else {
+             // We don't have the metadata in DB (which shouldn't happen if the JSON was imported),
+             // but if it does, we just record that it exists without downloading the huge blob yet.
+             await updateVideo(groupId, {
+               originalSize: Number(file.size) * 3 || 10000000,
+               videoSize: Number(file.size),
+               blob: null
+             });
           }
         }
       }
@@ -283,6 +403,29 @@ export default function App() {
     }
   };
 
+  const getOrFetchVideoBlob = async (videoId) => {
+    let blob = await getVideoBlob(videoId);
+    if (!blob) {
+      const token = getAccessToken();
+      if (token) {
+        setProgress(`Fetching high-res original from cloud...`);
+        try {
+          const fileId = await getFileIdByName(`${videoId}.mp4`, token);
+          if (fileId) {
+            blob = await downloadFileFromGoogleDrive(fileId, token);
+            if (blob) {
+              await updateVideo(videoId, { blob });
+            }
+          }
+        } catch (e) {
+          console.error('Failed to fetch blob from cloud:', e);
+        }
+        setProgress('');
+      }
+    }
+    return blob;
+  };
+
   const handleDownloadPhoto = async (photo) => {
     if (!photo) return;
     if (photo.blob) {
@@ -290,7 +433,7 @@ export default function App() {
       return;
     }
     try {
-      const containerBlob = await getVideoBlob(photo.videoId);
+      const containerBlob = await getOrFetchVideoBlob(photo.videoId);
       if (containerBlob) {
         const frameUrl = await extractSingleFrame(containerBlob, photo.timestamp || 0.2);
         if (frameUrl) {
@@ -308,7 +451,7 @@ export default function App() {
     setSelectedPhoto(photo);
     setFullPhotoUrl(photo.thumbnail || '');
     try {
-      const containerBlob = await getVideoBlob(photo.videoId);
+      const containerBlob = await getOrFetchVideoBlob(photo.videoId);
       if (containerBlob) {
         const frameUrl = await extractSingleFrame(containerBlob, photo.timestamp || 0.2);
         if (frameUrl) {

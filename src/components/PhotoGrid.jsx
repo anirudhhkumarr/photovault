@@ -27,12 +27,23 @@ export function PhotoGrid({ photos, onInspect, onDownload, onDelete, isLoadingDa
 
   return (
     <div className="photo-grid">
-      {photos.map(photo => (
-        <div 
-          key={photo.id} 
-          className="photo-item animate-fade-in" 
-          onClick={() => onInspect(photo)}
-        >
+      {photos.map((photo, index) => {
+        if (!photo) {
+          return (
+            <div key={`skeleton-${index}`} className="photo-item skeleton-box" style={{ background: 'var(--bg-secondary)', animation: 'pulse 1.5s infinite ease-in-out' }}>
+              <div className="flex items-center justify-center w-full" style={{ height: '100%', opacity: 0.2 }}>
+                <ImageIcon size={32} color="var(--text-secondary)" strokeWidth={1.5} />
+              </div>
+            </div>
+          );
+        }
+        
+        return (
+          <div 
+            key={photo.id} 
+            className="photo-item animate-fade-in" 
+            onClick={() => onInspect(photo)}
+          >
           {photo.thumbnail ? (
             <img src={photo.thumbnail} alt={photo.filename} loading="lazy" style={{ opacity: photo.isUploading ? 0.6 : 1, transition: 'opacity 0.2s' }} />
           ) : (
@@ -91,11 +102,11 @@ export function PhotoGrid({ photos, onInspect, onDownload, onDelete, isLoadingDa
               </>
             )}
           </div>
-        </div>
-      ))}
+        );
+      })}
       
-      {isLoadingData && Array.from({ length: 10 }).map((_, i) => (
-        <div key={`skeleton-${i}`} className="photo-item skeleton-box" style={{ background: 'var(--bg-secondary)', animation: 'pulse 1.5s infinite ease-in-out' }}>
+      {isLoadingData && !photos.length && Array.from({ length: 10 }).map((_, i) => (
+        <div key={`initial-skeleton-${i}`} className="photo-item skeleton-box" style={{ background: 'var(--bg-secondary)', animation: 'pulse 1.5s infinite ease-in-out' }}>
           <div className="flex items-center justify-center w-full" style={{ height: '100%', opacity: 0.2 }}>
             <ImageIcon size={32} color="var(--text-secondary)" strokeWidth={1.5} />
           </div>

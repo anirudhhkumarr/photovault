@@ -1,31 +1,48 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+
+/* System Fonts fallback */
+@font-face {
+  font-family: 'SF Pro Display';
+  src: local('SF Pro Display'), local('Helvetica Neue'), local('Arial');
+  font-display: swap;
+}
 
 :root {
-  --bg-color: #f5f5f7;
-  --text-color: #1d1d1f;
-  --text-secondary: #86868b;
-  --card-bg: rgba(255, 255, 255, 0.7);
+  /* Apple Light Mode Colors */
+  --bg-color: #F5F5F7;
+  --text-color: #1D1D1F;
+  --text-secondary: #86868B;
+  --card-bg: rgba(255, 255, 255, 0.65);
   --card-border: rgba(255, 255, 255, 0.4);
-  --accent-color: #0066cc;
-  --danger-color: #ff3b30;
-  --success-color: #34c759;
+  --accent-color: #007AFF;
+  --danger-color: #FF3B30;
+  --success-color: #34C759;
   
   --radius-lg: 20px;
-  --radius-md: 12px;
-  --radius-sm: 8px;
+  --radius-md: 16px;
+  --radius-sm: 10px;
+  --radius-pill: 999px;
   
-  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.04);
-  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.08);
-  --shadow-lg: 0 20px 40px rgba(0, 0, 0, 0.12);
+  --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 10px 30px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 24px 48px rgba(0, 0, 0, 0.12);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
+    /* Apple Dark Mode Colors */
     --bg-color: #000000;
-    --text-color: #f5f5f7;
-    --card-bg: rgba(28, 28, 30, 0.7);
-    --card-border: rgba(255, 255, 255, 0.1);
-    --accent-color: #2997ff;
+    --text-color: #F5F5F7;
+    --text-secondary: #98989D;
+    --card-bg: rgba(28, 28, 30, 0.65);
+    --card-border: rgba(255, 255, 255, 0.08);
+    --accent-color: #0A84FF;
+    --danger-color: #FF453A;
+    --success-color: #32D74B;
+    
+    --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 10px 30px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 24px 48px rgba(0, 0, 0, 0.6);
   }
 }
 
@@ -36,34 +53,35 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Inter", "Helvetica Neue", Arial, sans-serif;
   background-color: var(--bg-color);
   color: var(--text-color);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  line-height: 1.5;
-  transition: background-color 0.3s ease;
+  line-height: 1.4;
+  transition: background-color 0.4s ease, color 0.4s ease;
 }
 
 /* Glassmorphism Classes */
 .glass {
   background: var(--card-bg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(40px) saturate(200%);
+  -webkit-backdrop-filter: blur(40px) saturate(200%);
   border: 1px solid var(--card-border);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-sm);
   border-radius: var(--radius-lg);
 }
 
 .glass-header {
   background: var(--card-bg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(40px) saturate(200%);
+  -webkit-backdrop-filter: blur(40px) saturate(200%);
   border-bottom: 1px solid var(--card-border);
   position: sticky;
   top: 0;
   z-index: 50;
-  padding: 16px 24px;
+  padding: 16px 32px;
+  transition: all 0.3s ease;
 }
 
 /* Typography */
@@ -73,27 +91,31 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .text-title {
-  font-size: 32px;
+  font-size: 34px;
   font-weight: 600;
-  letter-spacing: -0.003em;
+  letter-spacing: -0.015em;
+  line-height: 1.1;
 }
 
 .text-subtitle {
   font-size: 19px;
   color: var(--text-secondary);
   font-weight: 400;
+  letter-spacing: -0.01em;
 }
 
 .text-caption {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-secondary);
+  font-weight: 500;
+  letter-spacing: -0.01em;
 }
 
 /* Layout Utilities */
 .container {
-  max-width: 1200px;
+  max-width: 1400px;
   margin: 0 auto;
-  padding: 0 24px;
+  padding: 0 32px;
 }
 
 .flex { display: flex; }
@@ -105,25 +127,36 @@ h1, h2, h3, h4, h5, h6 {
 .gap-4 { gap: 16px; }
 .gap-6 { gap: 24px; }
 .gap-8 { gap: 32px; }
+.mt-2 { margin-top: 8px; }
 .mt-4 { margin-top: 16px; }
 .mt-8 { margin-top: 32px; }
+.mb-2 { margin-bottom: 8px; }
+.mb-4 { margin-bottom: 16px; }
 .mb-8 { margin-bottom: 32px; }
 .p-6 { padding: 24px; }
 .w-full { width: 100%; }
+.h-full { height: 100%; }
 
 /* Components */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 6px;
   padding: 10px 20px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-pill);
   font-size: 15px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.3s cubic-bezier(0.25, 1, 0.5, 1);
   border: none;
+  letter-spacing: -0.01em;
+  user-select: none;
+}
+
+.btn-icon {
+  padding: 8px;
+  border-radius: var(--radius-pill);
 }
 
 .btn-primary {
@@ -133,29 +166,40 @@ h1, h2, h3, h4, h5, h6 {
 
 .btn-primary:hover {
   filter: brightness(1.1);
-  transform: scale(1.02);
+  transform: scale(1.03);
+  box-shadow: 0 6px 16px rgba(0, 122, 255, 0.3);
 }
 
 .btn-primary:active {
-  transform: scale(0.98);
+  transform: scale(0.97);
 }
 
 .btn-secondary {
-  background-color: rgba(134, 134, 139, 0.1);
+  background-color: rgba(134, 134, 139, 0.12);
   color: var(--text-color);
 }
 
 .btn-secondary:hover {
   background-color: rgba(134, 134, 139, 0.2);
+  transform: scale(1.03);
+}
+
+.btn-secondary:active {
+  transform: scale(0.97);
 }
 
 .btn-danger {
-  background-color: rgba(255, 59, 48, 0.1);
+  background-color: rgba(255, 59, 48, 0.12);
   color: var(--danger-color);
 }
 
 .btn-danger:hover {
   background-color: rgba(255, 59, 48, 0.2);
+  transform: scale(1.03);
+}
+
+.btn-danger:active {
+  transform: scale(0.97);
 }
 
 .card {
@@ -163,8 +207,10 @@ h1, h2, h3, h4, h5, h6 {
   border-radius: var(--radius-lg);
   background: var(--card-bg);
   box-shadow: var(--shadow-sm);
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
-  backdrop-filter: blur(10px);
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  backdrop-filter: blur(30px) saturate(180%);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  border: 1px solid var(--card-border);
 }
 
 .card:hover {
@@ -172,10 +218,11 @@ h1, h2, h3, h4, h5, h6 {
   box-shadow: var(--shadow-md);
 }
 
+/* Photo Grid Squircles */
 .photo-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 20px;
 }
 
 .photo-item {
@@ -185,59 +232,167 @@ h1, h2, h3, h4, h5, h6 {
   overflow: hidden;
   box-shadow: var(--shadow-sm);
   background: rgba(0,0,0,0.05);
+  cursor: pointer;
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  /* Use squircle-like corner rounding */
+  -webkit-mask-image: -webkit-radial-gradient(white, black);
+}
+
+.photo-item:hover {
+  transform: scale(1.02);
+  box-shadow: var(--shadow-md);
+  z-index: 10;
 }
 
 .photo-item img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 0.3s ease;
+  transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .photo-item:hover img {
-  transform: scale(1.05);
+  transform: scale(1.06);
 }
 
+/* Photo Overlay with elegant pill buttons */
 .photo-overlay {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.4);
+  background: linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0) 40%, rgba(0,0,0,0) 60%, rgba(0,0,0,0.6) 100%);
   opacity: 0;
-  transition: opacity 0.2s ease;
+  transition: opacity 0.3s ease;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  padding: 16px;
 }
 
 .photo-item:hover .photo-overlay {
   opacity: 1;
 }
 
+.photo-actions {
+  display: flex;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  padding: 6px;
+  border-radius: var(--radius-pill);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+@media (prefers-color-scheme: dark) {
+  .photo-actions {
+    background: rgba(40, 40, 40, 0.7);
+  }
+}
+
+.photo-action-btn {
+  padding: 8px;
+  border-radius: var(--radius-pill);
+  border: none;
+  background: transparent;
+  color: var(--text-color);
+  cursor: pointer;
+  transition: background 0.2s, transform 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.photo-action-btn:hover {
+  background: rgba(134, 134, 139, 0.2);
+  transform: scale(1.1);
+}
+
+.photo-action-btn.danger {
+  color: var(--danger-color);
+}
+.photo-action-btn.danger:hover {
+  background: rgba(255, 59, 48, 0.15);
+}
+
+/* Storage Bar Squircles */
+.storage-bar-track {
+  width: 100%;
+  height: 12px;
+  background: rgba(134, 134, 139, 0.2);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  position: relative;
+}
+
+.storage-bar-fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  position: absolute;
+  top: 0;
+  left: 0;
+  transition: width 1s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Modal Acrylic Base */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  opacity: 0;
+  animation: fadeInModal 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes fadeInModal {
+  to { opacity: 1; }
+}
+
+.modal-content {
+  background: transparent;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  transform: scale(0.98);
+  animation: scaleInModal 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes scaleInModal {
+  to { transform: scale(1); }
+}
+
 /* Animations */
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
+  from { opacity: 0; transform: translateY(16px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
 .animate-fade-in {
-  animation: fadeIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-/* Custom Scrollbar */
+/* Custom Scrollbar iOS style */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 14px;
+  height: 14px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--text-secondary);
-  border-radius: 4px;
+  background: rgba(134, 134, 139, 0.4);
+  border: 4px solid var(--bg-color);
+  border-radius: 99px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-color);
+  background: rgba(134, 134, 139, 0.6);
 }

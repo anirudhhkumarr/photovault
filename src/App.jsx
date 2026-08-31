@@ -540,9 +540,9 @@ export default function App() {
   const totalCompressed = groups.reduce((acc, g) => acc + (g.videoSize || 0), 0);
 
   return (
-    <div className="container" style={{ padding: '40px 24px', minHeight: '100vh' }}>
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       
-      {/* Header */}
+      {/* Edge-to-Edge Sticky Header */}
       <Header 
         isProcessing={isProcessing}
         hasItems={photos.length > 0 || groups.length > 0}
@@ -555,96 +555,98 @@ export default function App() {
         onReindex={handleReindex}
       />
 
-      {/* Prominent Fail-Hard Error Banner */}
-      {errorMessage && (
-        <div 
-          className="card mb-8 animate-fade-in flex items-start gap-4" 
-          style={{ 
-            backgroundColor: 'rgba(255, 59, 48, 0.08)', 
-            border: '1px solid rgba(255, 59, 48, 0.3)', 
-            padding: '16px 20px',
-            borderRadius: '16px'
-          }}
-        >
-          <AlertCircle size={22} color="#FF3B30" style={{ flexShrink: 0, marginTop: '2px' }} />
-          <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 600, fontSize: '15px', color: '#FF3B30' }}>Operation Failed</div>
-            <p style={{ margin: '4px 0 0', fontSize: '13px', lineHeight: 1.5, color: 'var(--text-primary)' }}>
-              {errorMessage}
-            </p>
-          </div>
-          <button 
-            className="btn btn-secondary" 
-            style={{ padding: '6px 12px', fontSize: '12px', borderRadius: '8px' }} 
-            onClick={() => setErrorMessage(null)}
+      <main className="container" style={{ flex: 1, padding: '40px 32px 80px 32px' }}>
+        {/* Prominent Fail-Hard Error Banner */}
+        {errorMessage && (
+          <div 
+            className="card mb-8 animate-fade-in flex items-start gap-4" 
+            style={{ 
+              backgroundColor: 'rgba(255, 59, 48, 0.08)', 
+              border: '1px solid rgba(255, 59, 48, 0.3)', 
+              padding: '16px 20px',
+              borderRadius: '16px'
+            }}
           >
-            <X size={14} /> Dismiss
-          </button>
-        </div>
-      )}
-
-      {/* Progress Card */}
-      {isProcessing && (
-        <div className="card mb-8 animate-fade-in flex items-center justify-center gap-4" style={{ backgroundColor: 'var(--accent-color)', color: 'white', border: 'none' }}>
-          <div className="spinner"></div>
-          <span style={{ fontWeight: 500 }}>{progress}</span>
-        </div>
-      )}
-
-      {/* Google Drive Connection Gate */}
-      {!googleUser ? (
-        <div className="card flex flex-col items-center justify-center text-center" style={{ padding: '64px 24px', margin: '40px 0' }}>
-          <div style={{
-            width: '64px',
-            height: '64px',
-            borderRadius: '20px',
-            backgroundColor: 'rgba(0, 113, 227, 0.1)',
-            color: 'var(--accent-color)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            marginBottom: '16px'
-          }}>
-            <Cloud size={32} />
-          </div>
-          <h2 className="text-title" style={{ fontSize: '22px', margin: 0 }}>Connect Google Drive to Start</h2>
-          <p className="text-subtitle" style={{ maxWidth: '420px', margin: '8px 0 24px' }}>
-            PhotoVault stores and backs up all your photos directly to your Google Drive account.
-          </p>
-          <button 
-            className="btn btn-primary"
-            style={{ padding: '14px 32px', fontSize: '15px', fontWeight: 600 }}
-            onClick={() => setIsGoogleModalOpen(true)}
-          >
-            Connect Google Drive
-          </button>
-        </div>
-      ) : (
-        <>
-          {/* Stats Summary */}
-          {groups.length > 0 && (
-            <StorageSummary 
-              totalOriginal={totalOriginal}
-              totalCompressed={totalCompressed}
-              photoCount={photos.length}
-            />
-          )}
-
-          {/* Photo Gallery Grid */}
-          <div>
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-title" style={{ fontSize: '22px', margin: 0 }}>Photos ({photos.length})</h2>
+            <AlertCircle size={22} color="#FF3B30" style={{ flexShrink: 0, marginTop: '2px' }} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600, fontSize: '15px', color: '#FF3B30' }}>Operation Failed</div>
+              <p style={{ margin: '4px 0 0', fontSize: '13px', lineHeight: 1.5, color: 'var(--text-primary)' }}>
+                {errorMessage}
+              </p>
             </div>
-
-            <PhotoGrid 
-              photos={photos}
-              onInspect={handleInspectPhoto}
-              onDownload={handleDownloadPhoto}
-              onDelete={handleDeletePhoto}
-            />
+            <button 
+              className="btn btn-secondary btn-icon" 
+              onClick={() => setErrorMessage(null)}
+            >
+              <X size={16} />
+            </button>
           </div>
-        </>
-      )}
+        )}
+
+        {/* Progress Card */}
+        {isProcessing && (
+          <div className="card mb-8 animate-fade-in flex items-center justify-center gap-4" style={{ backgroundColor: 'var(--accent-color)', color: 'white', border: 'none' }}>
+            <div className="spinner"></div>
+            <span style={{ fontWeight: 500, letterSpacing: '-0.01em' }}>{progress}</span>
+          </div>
+        )}
+
+        {/* Google Drive Connection Gate */}
+        {!googleUser ? (
+          <div className="card flex flex-col items-center justify-center text-center" style={{ padding: '80px 24px', margin: '40px 0' }}>
+            <div style={{
+              width: '80px',
+              height: '80px',
+              borderRadius: '24px',
+              backgroundColor: 'rgba(0, 122, 255, 0.1)',
+              color: 'var(--accent-color)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: '24px'
+            }}>
+              <Cloud size={40} strokeWidth={1.5} />
+            </div>
+            <h2 className="text-title" style={{ fontSize: '28px', margin: 0 }}>Connect Google Drive</h2>
+            <p className="text-subtitle" style={{ maxWidth: '420px', margin: '12px 0 32px' }}>
+              PhotoVault stores and backs up all your photos directly to your Google Drive account with enterprise-grade encryption.
+            </p>
+            <button 
+              className="btn btn-primary"
+              style={{ padding: '14px 32px', fontSize: '16px' }}
+              onClick={() => setIsGoogleModalOpen(true)}
+            >
+              Connect to Drive
+            </button>
+          </div>
+        ) : (
+          <>
+            {/* Stats Summary */}
+            {groups.length > 0 && (
+              <StorageSummary 
+                totalOriginal={totalOriginal}
+                totalCompressed={totalCompressed}
+                photoCount={photos.length}
+              />
+            )}
+
+            {/* Photo Gallery Grid */}
+            <div>
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-title" style={{ fontSize: '28px', margin: 0 }}>Library</h2>
+                <span className="text-subtitle">{photos.length} Items</span>
+              </div>
+
+              <PhotoGrid 
+                photos={photos}
+                onInspect={handleInspectPhoto}
+                onDownload={handleDownloadPhoto}
+                onDelete={handleDeletePhoto}
+              />
+            </div>
+          </>
+        )}
+      </main>
 
       {/* High-Resolution Photo Viewer Modal */}
       <PhotoViewerModal 

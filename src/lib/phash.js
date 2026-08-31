@@ -226,7 +226,7 @@ export function computeSceneSimilarity(fp1, fp2) {
  * Determines whether two photos belong to the same visual scene.
  * Pure visual comparison on pixels only (threshold: 0.58).
  */
-export function arePhotosInSameScene(fp1, fp2, threshold = 0.58) {
+export function arePhotosInSameScene(fp1, fp2, threshold = 0.80) {
   if (!fp1 || !fp2) return false;
   
   const score = computeSceneSimilarity(fp1, fp2);

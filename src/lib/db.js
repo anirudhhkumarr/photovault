@@ -23,6 +23,38 @@ export async function getPhotos() {
   return db.getAll('photos');
 }
 
+export async function getPhotosCount() {
+  const db = await initDB();
+  return db.count('photos');
+}
+
+export async function getPagedPhotos(offset, limit) {
+  const db = await initDB();
+  const tx = db.transaction('photos', 'readonly');
+  const store = tx.objectStore('photos');
+  let cursor = await store.openCursor(null, 'prev'); // sort descending
+  
+  const results = [];
+  let skipped = 0;
+  
+  while (cursor) {
+    if (skipped < offset) {
+      skipped++;
+      cursor = await cursor.continue();
+      continue;
+    }
+    
+    results.push(cursor.value);
+    
+    if (results.length >= limit) {
+      break;
+    }
+    cursor = await cursor.continue();
+  }
+  
+  return results;
+}
+
 export async function getPhotoById(id) {
   const db = await initDB();
   return db.get('photos', id);

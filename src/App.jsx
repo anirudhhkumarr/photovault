@@ -1,14 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Header } from './components/Header';
 import { StorageSummary } from './components/StorageSummary';
 import { PhotoGrid } from './components/PhotoGrid';
 import { PhotoViewerModal } from './components/PhotoViewerModal';
 import { GoogleDriveModal } from './components/GoogleDriveModal';
+import { PipelineManager } from './lib/pipeline/PipelineManager';
 import { Cloud, AlertCircle, X } from 'lucide-react';
 
 import { computeContentHash, extractSceneFingerprint, arePhotosInSameScene, generateThumbnail } from './lib/phash';
 import { 
-  getPhotos, addPhoto, updatePhoto, deletePhotoFromDB, 
+  getPhotos, getPagedPhotos, getPhotosCount, addPhoto, updatePhoto, deletePhotoFromDB, 
   getVideos, addVideo, updateVideo, deleteVideoFromDB, 
   getVideoBlob, clearDB, exportContainerMetadata, importContainerMetadata
 } from './lib/db';
@@ -31,9 +32,18 @@ import {
 
 export default function App() {
   const [photos, setPhotos] = useState([]);
+  const [totalPhotosCount, setTotalPhotosCount] = useState(0);
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [isLoadingData, setIsLoadingData] = useState(false);
+  const PAGE_SIZE = 50;
+  const loadMoreRef = useRef(null);
+
+  const [uploadingFiles, setUploadingFiles] = useState([]);
   const [groups, setGroups] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState('');
+  const [progressStats, setProgressStats] = useState(null);
   const [errorMessage, setErrorMessage] = useState(null);
   
   const [selectedPhoto, setSelectedPhoto] = useState(null);
@@ -54,12 +64,15 @@ export default function App() {
     });
   }, []);
 
-  const loadData = async () => {
+  const loadData = async (resetPage = false) => {
     try {
-      const p = await getPhotos();
+      setIsLoadingData(true);
+      const currentPage = resetPage ? 0 : page;
+      const count = await getPhotosCount();
+      const p = await getPagedPhotos(currentPage * PAGE_SIZE, PAGE_SIZE);
       const g = await getVideos();
       
-      const validGroupIds = new Set(p.map(item => item.videoId));
+      const validGroupIds = new Set((await getPhotos()).map(item => item.videoId));
       const activeGroups = [];
       for (const group of g) {
         if (validGroupIds.has(group.id)) {
@@ -69,14 +82,53 @@ export default function App() {
         }
       }
 
-      setPhotos(p || []);
+      setTotalPhotosCount(count);
+      setHasMore((currentPage * PAGE_SIZE) + p.length < count);
+
+      if (resetPage) {
+        setPhotos(p || []);
+        setPage(0);
+      } else {
+        setPhotos(prev => {
+          // Prevent duplicates when incrementally loading
+          const existingIds = new Set(prev.map(i => i.id));
+          const newItems = p.filter(i => !existingIds.has(i.id));
+          return [...prev, ...newItems];
+        });
+      }
+      
       setGroups(activeGroups);
     } catch (e) {
       console.error('loadData error:', e);
-      setPhotos([]);
-      setGroups([]);
+    } finally {
+      setIsLoadingData(false);
     }
   };
+
+  // Intersection Observer for Infinite Scroll
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !isLoadingData) {
+          setPage(prev => prev + 1);
+        }
+      },
+      { rootMargin: '400px' } // Load a few pages ahead
+    );
+    
+    if (loadMoreRef.current) {
+      observer.observe(loadMoreRef.current);
+    }
+    
+    return () => observer.disconnect();
+  }, [hasMore, isLoadingData]);
+
+  // When page state changes, append next page (unless page is 0, which means reset)
+  useEffect(() => {
+    if (page > 0) {
+      loadData();
+    }
+  }, [page]);
 
   /**
    * Saves the IndexedDB metadata for a specific container to Google Drive.
@@ -351,6 +403,7 @@ export default function App() {
     if (!rawFiles.length) return;
 
     setIsProcessing(true);
+    setProgressStats(null);
     setErrorMessage(null);
 
     try {
@@ -395,158 +448,59 @@ export default function App() {
         }
       }
 
-      // 2. Image Clustering and HEVC Container Packing
+      // 2. Image Clustering and HEVC Container Packing via Producer/Consumer Pipeline
       if (imageFiles.length > 0) {
-        const processedBatch = [];
-        for (let i = 0; i < imageFiles.length; i++) {
-          const file = imageFiles[i];
-          setProgress(`Analyzing ${i + 1}/${imageFiles.length}: ${file.name}`);
-
-          const arrayBuffer = await file.arrayBuffer();
-          const [contentHash, fingerprint, thumbnail] = await Promise.all([
-            computeContentHash(arrayBuffer),
-            extractSceneFingerprint(file).catch(() => null),
-            generateThumbnail(file, 400)
-          ]);
-
-          processedBatch.push({
-            file,
-            name: file.name,
+        // Build temp UI objects so they show up as uploading immediately
+        const newUploads = imageFiles.map(file => {
+          const tempId = Math.random().toString(36);
+          file._tempId = tempId; // mutate the actual File object so FingerprintStage has it
+          return {
+            id: tempId,
+            filename: file.name,
             size: file.size,
-            contentHash,
-            fingerprint,
-            thumbnail,
-            data: new Uint8Array(arrayBuffer)
-          });
-        }
-
-        setProgress('Matching similar scene photos...');
-        const existingPhotos = await getPhotos();
-        const sceneClusters = new Map();
-
-        // Track estimated original sizes to limit container size
-        const MAX_CONTAINER_SIZE = 150 * 1024 * 1024; // 150 MB limit
-        const groupSizeMap = new Map();
-        existingPhotos.forEach(p => {
-          groupSizeMap.set(p.videoId, (groupSizeMap.get(p.videoId) || 0) + p.size);
+            thumbnail: URL.createObjectURL(file),
+            isUploading: true
+          };
         });
-
-        const canGroupAccept = (groupId, additionalSize) => {
-          const currentSize = groupSizeMap.get(groupId) || 0;
-          return (currentSize + additionalSize) <= MAX_CONTAINER_SIZE;
-        };
-
-        for (const item of processedBatch) {
-          let matchedGroupId = null;
-
-          // 1. Exact Duplicate match
-          for (const p of existingPhotos) {
-            if (p.contentHash && p.contentHash === item.contentHash) {
-              if (canGroupAccept(p.videoId, item.size)) {
-                matchedGroupId = p.videoId;
-                break;
+        setUploadingFiles(prev => [...prev, ...newUploads]);
+        
+        await new Promise((resolve, reject) => {
+          const pipeline = new PipelineManager(
+            (msg) => setProgress(msg),
+            (err) => {
+              if (err) reject(err);
+              else resolve();
+            },
+            (stats) => setProgressStats(stats),
+            (itemIds) => {
+              // Remove these items from uploading state since they finished
+              if (itemIds && itemIds.length > 0) {
+                setUploadingFiles(prev => prev.filter(f => !itemIds.includes(f.id)));
               }
+              // A container completed, so reset and fetch the top of the DB
+              loadData(true); 
             }
-          }
-
-          // 2. Pure Visual Content Scene Match (same room/setting, people moving)
-          if (!matchedGroupId && item.fingerprint) {
-            for (const p of existingPhotos) {
-              if (p.fingerprint && arePhotosInSameScene(item.fingerprint, p.fingerprint)) {
-                if (canGroupAccept(p.videoId, item.size)) {
-                  matchedGroupId = p.videoId;
-                  break;
-                }
-              }
-            }
-          }
-
-          // 3. Batch-internal visual scene match
-          if (!matchedGroupId && item.fingerprint) {
-            for (const prev of processedBatch) {
-              if (prev !== item && prev.videoId && prev.fingerprint) {
-                if (arePhotosInSameScene(item.fingerprint, prev.fingerprint)) {
-                  if (canGroupAccept(prev.videoId, item.size)) {
-                    matchedGroupId = prev.videoId;
-                    break;
-                  }
-                }
-              }
-            }
-          }
-
-          const targetGroupId = matchedGroupId || `group_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-          item.videoId = targetGroupId;
-
-          // Update size tracking
-          groupSizeMap.set(targetGroupId, (groupSizeMap.get(targetGroupId) || 0) + item.size);
-
-          if (!sceneClusters.has(targetGroupId)) {
-            sceneClusters.set(targetGroupId, []);
-          }
-          sceneClusters.get(targetGroupId).push(item);
-        }
-
-        let clusterIdx = 0;
-        for (const [groupId, newItems] of sceneClusters.entries()) {
-          clusterIdx++;
-          setProgress(`Packing container ${clusterIdx}/${sceneClusters.size}...`);
-
-          const existingContainerBlob = await getVideoBlob(groupId);
-          let allImagesForGroup = [];
-
-          if (existingContainerBlob) {
-            const currentPhotosInGroup = (await getPhotos()).filter(p => p.videoId === groupId);
-            const extractedFrames = await extractAllFramesFromVideo(existingContainerBlob, currentPhotosInGroup.length);
-            allImagesForGroup = [...extractedFrames.map(f => f.dataUrl), ...newItems.map(item => item.data)];
-          } else {
-            allImagesForGroup = newItems.map(item => item.data);
-          }
-
-          // Pack into HEVC hardware-accelerated inter-frame container with frame progress
-          const encoded = await encodeImagesToVideo(allImagesForGroup, (cur, total) => {
-            setProgress(`Encoding container ${clusterIdx}/${sceneClusters.size} (photo ${cur}/${total})...`);
-          });
-
-          if (getAccessToken()) {
-            setProgress(`Syncing container ${clusterIdx}/${sceneClusters.size} to Google Drive...`);
-            await uploadFileToGoogleDrive(`${groupId}.mp4`, encoded.blob, encoded.mimeType || 'video/mp4');
-          }
-
-          const startIndex = existingContainerBlob ? ((await getPhotos()).filter(p => p.videoId === groupId).length) : 0;
-          for (let i = 0; i < newItems.length; i++) {
-            const item = newItems[i];
-            const frameIndex = startIndex + i;
-            await addPhoto({
-              filename: item.name,
-              contentHash: item.contentHash,
-              fingerprint: item.fingerprint,
-              videoId: groupId,
-              frameIndex,
-              timestamp: frameIndex * 1.0 + 0.2,
-              size: item.size,
-              thumbnail: item.thumbnail,
-              createdAt: Date.now()
-            });
-          }
-
-          const allPhotosForGroup = (await getPhotos()).filter(p => p.videoId === groupId);
-          const totalOriginal = allPhotosForGroup.reduce((sum, p) => sum + p.size, 0);
-
-          await updateVideo(groupId, {
-            originalSize: totalOriginal,
-            videoSize: encoded.blob.length,
-            frameCount: encoded.frameCount,
-            width: encoded.width,
-            height: encoded.height,
-            blob: encoded.blob
-          });
+          );
           
-          await saveContainerMetadataToDrive(groupId);
-        }
+          pipeline.setTotalItems(imageFiles.length);
+          pipeline.start();
+          
+          // Producer: Feed files into the pipeline asynchronously
+          (async () => {
+            try {
+              for (const file of imageFiles) {
+                await pipeline.enqueueFile(file);
+              }
+              pipeline.finishIngestion();
+            } catch (err) {
+              console.error("Producer failed:", err);
+              reject(err);
+            }
+          })();
+        });
       }
 
-      await loadData();
+      await loadData(true); // Final catch-all refresh
       setProgress('');
     } catch (err) {
       console.error('Processing error:', err);
@@ -606,9 +560,26 @@ export default function App() {
 
         {/* Progress Card */}
         {isProcessing && (
-          <div className="card mb-8 animate-fade-in flex items-center justify-center gap-4" style={{ backgroundColor: 'var(--accent-color)', color: 'white', border: 'none' }}>
-            <div className="spinner"></div>
-            <span style={{ fontWeight: 500, letterSpacing: '-0.01em' }}>{progress}</span>
+          <div className="card mb-8 animate-fade-in flex flex-col gap-4" style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-color)' }}>
+            <div className="flex items-center gap-3">
+              <div className="spinner" style={{ width: '20px', height: '20px', borderWidth: '2px', borderTopColor: 'var(--accent-color)' }}></div>
+              <span style={{ fontWeight: 600, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>Processing Uploads</span>
+            </div>
+            
+            {progressStats ? (
+              <div style={{ width: '100%' }}>
+                <div style={{ width: '100%', height: '6px', backgroundColor: 'var(--bg-color)', borderRadius: '3px', overflow: 'hidden' }}>
+                  <div style={{ width: `${progressStats.percent}%`, height: '100%', backgroundColor: 'var(--accent-color)', transition: 'width 0.3s ease' }}></div>
+                </div>
+                <div className="flex justify-between items-center mt-2">
+                  <span className="text-subtitle" style={{ fontSize: '13px' }}>{progressStats.completed} of {progressStats.total} items</span>
+                  <span className="text-subtitle" style={{ fontSize: '13px' }}>{progressStats.etaSeconds > 60 ? Math.round(progressStats.etaSeconds / 60) + ' min remaining' : progressStats.etaSeconds + ' sec remaining'}</span>
+                </div>
+                <div className="text-subtitle mt-3" style={{ fontSize: '13px', textAlign: 'center', opacity: 0.8 }}>{progress}</div>
+              </div>
+            ) : (
+              <span className="text-subtitle" style={{ fontSize: '14px' }}>{progress}</span>
+            )}
           </div>
         )}
 
@@ -652,19 +623,22 @@ export default function App() {
             )}
 
             {/* Photo Gallery Grid */}
-            <div>
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-title" style={{ fontSize: '28px', margin: 0 }}>Library</h2>
-                <span className="text-subtitle">{photos.length} Items</span>
-              </div>
-
-              <PhotoGrid 
-                photos={photos}
-                onInspect={handleInspectPhoto}
-                onDownload={handleDownloadPhoto}
-                onDelete={handleDeletePhoto}
-              />
+          <div>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-title" style={{ fontSize: '28px', margin: 0 }}>Library</h2>
+              <span className="text-subtitle">{totalPhotosCount + uploadingFiles.length} Items</span>
             </div>
+
+            <PhotoGrid 
+              photos={[...uploadingFiles, ...photos]}
+              onInspect={handleInspectPhoto}
+              onDownload={handleDownloadPhoto}
+              onDelete={handleDeletePhoto}
+              isLoadingData={isLoadingData}
+            />
+
+            <div ref={loadMoreRef} style={{ height: '20px', width: '100%' }} />
+          </div>
           </>
         )}
       </main>

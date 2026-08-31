@@ -16,16 +16,19 @@ export function Header({
     <div className="glass-header flex justify-between items-center mb-8">
       {/* Left side: Title and Cloud Status */}
       <div className="flex items-center gap-6">
-        <div>
-          <h1 className="text-title" style={{ fontSize: '24px', margin: 0 }}>
-            PhotoVault
-          </h1>
-          {googleUser && (
-            <div className="flex items-center gap-1 mt-1 text-caption" style={{ color: 'var(--success-color)' }}>
-              <Cloud size={14} />
-              <span>{googleUser.email}</span>
-            </div>
-          )}
+        <div className="flex items-center gap-3">
+          <img src="/logo.png" alt="PhotoVault Logo" style={{ width: '32px', height: '32px' }} />
+          <div>
+            <h1 className="text-title" style={{ fontSize: '24px', margin: 0, lineHeight: 1 }}>
+              PhotoVault
+            </h1>
+            {googleUser && (
+              <div className="flex items-center gap-1 mt-1 text-caption" style={{ color: 'var(--success-color)' }}>
+                <Cloud size={14} />
+                <span>{googleUser.email}</span>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Secondary Actions (Icons) */}

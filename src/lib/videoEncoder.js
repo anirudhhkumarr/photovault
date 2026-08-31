@@ -247,35 +247,43 @@ export async function extractSingleFrame(videoBlobData, targetTimestampSec = 0.2
       resolve('');
     }, 6000);
 
-    video.onloadedmetadata = () => {
+    video.onloadeddata = () => {
       video.currentTime = Math.max(0.05, targetTimestampSec);
     };
 
     video.onseeked = () => {
-      try {
-        clearTimeout(timer);
-        const width = video.videoWidth || 1920;
-        const height = video.videoHeight || 1080;
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d', { alpha: false });
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(video, 0, 0, width, height);
+      const drawFrame = () => {
+        try {
+          clearTimeout(timer);
+          const width = video.videoWidth || 1920;
+          const height = video.videoHeight || 1080;
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d', { alpha: false });
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(video, 0, 0, width, height);
 
-        // Lossless PNG extraction for 100% bit-exact pixel fidelity
-        canvas.toBlob((blob) => {
+          // Lossless PNG extraction for 100% bit-exact pixel fidelity
+          canvas.toBlob((blob) => {
+            cleanup();
+            if (blob) {
+              resolve(URL.createObjectURL(blob));
+            } else {
+              resolve(canvas.toDataURL('image/png'));
+            }
+          }, 'image/png');
+        } catch {
           cleanup();
-          if (blob) {
-            resolve(URL.createObjectURL(blob));
-          } else {
-            resolve(canvas.toDataURL('image/png'));
-          }
-        }, 'image/png');
-      } catch {
-        cleanup();
-        resolve('');
+          resolve('');
+        }
+      };
+
+      if (video.readyState >= 2) {
+        drawFrame();
+      } else {
+        video.oncanplay = drawFrame;
       }
     };
 

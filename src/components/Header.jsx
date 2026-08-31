@@ -9,7 +9,8 @@ export function Header({
   onClear, 
   onUpload, 
   onUploadFolder,
-  onExportAll 
+  onExportAll,
+  onReindex
 }) {
   return (
     <div className="flex justify-between items-center mb-8">
@@ -46,6 +47,17 @@ export function Header({
             disabled={isProcessing}
           >
             <Download size={16} /> Export
+          </button>
+        )}
+
+        {googleUser && (
+          <button 
+            className="btn btn-secondary" 
+            onClick={onReindex} 
+            disabled={isProcessing}
+            title="Rebuild database from Google Drive containers"
+          >
+            <FolderUp size={16} style={{ transform: 'rotate(180deg)' }} /> Reindex
           </button>
         )}
 

@@ -104,3 +104,45 @@ export async function clearDB() {
     // Ignore
   }
 }
+
+export async function exportContainerMetadata(videoId) {
+  const allPhotos = await getPhotos();
+  const photos = allPhotos.filter(p => p.videoId === videoId);
+  const rawVideo = await getVideoById(videoId);
+  
+  const videos = [];
+  if (rawVideo) {
+    const { blob, ...rest } = rawVideo;
+    videos.push(rest);
+  }
+
+  return JSON.stringify({ photos, videos });
+}
+
+export async function importContainerMetadata(jsonString) {
+  try {
+    const { photos, videos } = JSON.parse(jsonString);
+    const db = await initDB();
+    
+    // Upsert instead of clearing
+    if (photos && photos.length > 0) {
+      const tx = db.transaction('photos', 'readwrite');
+      for (const p of photos) {
+        await tx.store.put(p);
+      }
+      await tx.done;
+    }
+
+    if (videos && videos.length > 0) {
+      const tx = db.transaction('videos', 'readwrite');
+      for (const v of videos) {
+        await tx.store.put(v);
+      }
+      await tx.done;
+    }
+    return true;
+  } catch (err) {
+    console.error('Failed to import container DB from JSON:', err);
+    return false;
+  }
+}

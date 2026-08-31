@@ -10,7 +10,7 @@ import { computeContentHash, extractSceneFingerprint, arePhotosInSameScene, gene
 import { 
   getPhotos, addPhoto, updatePhoto, deletePhotoFromDB, 
   getVideos, addVideo, updateVideo, deleteVideoFromDB, 
-  getVideoBlob, clearDB 
+  getVideoBlob, clearDB, exportContainerMetadata, importContainerMetadata
 } from './lib/db';
 import { encodeImagesToVideo, extractAllFramesFromVideo, extractSingleFrame } from './lib/videoEncoder';
 import { downloadFileDirectly } from './lib/driveSync';
@@ -23,7 +23,10 @@ import {
   getUserProfile, 
   uploadFileToGoogleDrive,
   listVaultFilesFromGoogleDrive,
-  downloadFileFromGoogleDrive
+  downloadFileFromGoogleDrive,
+  getFileIdByName,
+  uploadOrUpdateFileInGoogleDrive,
+  deleteFileFromGoogleDrive
 } from './lib/googleDrive';
 
 export default function App() {
@@ -76,9 +79,27 @@ export default function App() {
   };
 
   /**
+   * Saves the IndexedDB metadata for a specific container to Google Drive.
+   */
+  const saveContainerMetadataToDrive = async (groupId) => {
+    const token = getAccessToken();
+    if (!token || !groupId) return;
+    try {
+      setProgress(`Saving metadata for container ${groupId}...`);
+      const dbJson = await exportContainerMetadata(groupId);
+      await uploadOrUpdateFileInGoogleDrive(`metadata_${groupId}.json`, dbJson, 'application/json', token);
+    } catch (e) {
+      console.error(`Failed to save metadata for ${groupId}:`, e);
+      setErrorMessage(e.message || String(e));
+    } finally {
+      setProgress('');
+    }
+  };
+
+  /**
    * Reads and restores any existing photo vault containers from Google Drive.
    */
-  const syncExistingCloudVault = async (token = getAccessToken()) => {
+  const syncExistingCloudVault = async (token = getAccessToken(), forceReindex = false) => {
     if (!token) return;
     try {
       setIsProcessing(true);
@@ -89,35 +110,63 @@ export default function App() {
       const existingVideos = await getVideos();
       const existingIds = new Set(existingVideos.map(v => v.id));
 
+      if (!forceReindex) {
+        const metadataFiles = cloudFiles.filter(f => f.name.startsWith('metadata_') && f.name.endsWith('.json'));
+        for (const file of metadataFiles) {
+          try {
+            setProgress(`Restoring metadata: ${file.name}...`);
+            const dbData = await downloadFileFromGoogleDrive(file.id, token);
+            if (dbData) {
+              const text = new TextDecoder().decode(dbData);
+              await importContainerMetadata(text);
+            }
+          } catch (err) {
+            console.warn(`Failed to restore ${file.name}:`, err);
+          }
+        }
+        await loadData();
+      }
+
       let importedCount = 0;
       for (const file of cloudFiles) {
+        if (file.name.endsWith('.json')) continue;
+
         const groupId = file.name.replace(/\.mp4$/i, '');
-        if (!existingIds.has(groupId) && file.name.endsWith('.mp4')) {
-          setProgress(`Restoring vault from Google Drive: ${file.name}...`);
+        const isMp4 = file.name.endsWith('.mp4');
+        const existingVideo = existingVideos.find(v => v.id === groupId);
+
+        if (isMp4 && (forceReindex || !existingIds.has(groupId) || (existingVideo && !existingVideo.blob))) {
+          setProgress(`Restoring vault container: ${file.name}...`);
           const fileData = await downloadFileFromGoogleDrive(file.id, token);
           if (fileData) {
-            const frames = await extractAllFramesFromVideo(fileData, 50);
-            if (frames.length > 0) {
-              for (let i = 0; i < frames.length; i++) {
-                const frame = frames[i];
-                await addPhoto({
-                  filename: `${groupId}_photo_${i + 1}.jpg`,
-                  videoId: groupId,
-                  frameIndex: i,
-                  timestamp: frame.timestamp,
-                  size: Math.round(file.size / frames.length) || 1000000,
-                  thumbnail: frame.dataUrl,
-                  createdAt: Date.now()
+            if (forceReindex || !existingIds.has(groupId)) {
+              const frames = await extractAllFramesFromVideo(fileData, 50);
+              if (frames.length > 0) {
+                for (let i = 0; i < frames.length; i++) {
+                  const frame = frames[i];
+                  await addPhoto({
+                    filename: `${groupId}_photo_${i + 1}.jpg`,
+                    videoId: groupId,
+                    frameIndex: i,
+                    timestamp: frame.timestamp,
+                    size: Math.round(file.size / frames.length) || 1000000,
+                    thumbnail: frame.dataUrl,
+                    createdAt: Date.now()
+                  });
+                }
+                await updateVideo(groupId, {
+                  originalSize: Number(file.size) * 3 || 10000000,
+                  videoSize: Number(file.size),
+                  frameCount: frames.length,
+                  blob: fileData
                 });
+                importedCount++;
+                
+                await saveContainerMetadataToDrive(groupId);
               }
-
-              await updateVideo(groupId, {
-                originalSize: Number(file.size) * 3 || 10000000,
-                videoSize: Number(file.size),
-                frameCount: frames.length,
-                blob: fileData
-              });
-              importedCount++;
+            } else {
+              // Metadata was imported, just cache the blob
+              await updateVideo(groupId, { blob: fileData });
             }
           }
         }
@@ -126,6 +175,7 @@ export default function App() {
       if (importedCount > 0) {
         await loadData();
       }
+      
       setProgress('');
     } catch (e) {
       console.error('Cloud sync error:', e);
@@ -134,6 +184,17 @@ export default function App() {
       setIsProcessing(false);
     }
   };
+
+  const handleReindex = async () => {
+    if (!googleUser) return;
+    const confirm = window.confirm('Reindexing will rebuild your local database from the Google Drive containers. This may take some time. Continue?');
+    if (!confirm) return;
+
+    await clearDB();
+    await loadData();
+    await syncExistingCloudVault(getAccessToken(), true);
+  };
+
 
   const handleGoogleSignIn = () => {
     try {
@@ -263,6 +324,14 @@ export default function App() {
       }
 
       await loadData();
+      const stillExists = (await getVideos()).find(v => v.id === videoId);
+      if (stillExists) {
+        await saveContainerMetadataToDrive(videoId);
+      } else if (getAccessToken()) {
+        try {
+          await deleteFileFromGoogleDrive(`metadata_${videoId}.json`, getAccessToken());
+        } catch (e) { console.warn(e); }
+      }
       setProgress('');
     } catch (e) {
       console.error('Delete error:', e);
@@ -321,6 +390,7 @@ export default function App() {
 
           if (getAccessToken()) {
             await uploadFileToGoogleDrive(`${groupId}.mp4`, blobData, 'video/mp4');
+            await saveContainerMetadataToDrive(groupId);
           }
         }
       }
@@ -450,6 +520,8 @@ export default function App() {
             height: encoded.height,
             blob: encoded.blob
           });
+          
+          await saveContainerMetadataToDrive(groupId);
         }
       }
 
@@ -480,6 +552,7 @@ export default function App() {
         onUpload={handleFiles}
         onUploadFolder={handleFiles}
         onExportAll={handleExportAll}
+        onReindex={handleReindex}
       />
 
       {/* Prominent Fail-Hard Error Banner */}

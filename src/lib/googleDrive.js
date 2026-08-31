@@ -311,3 +311,75 @@ export async function downloadFileFromGoogleDrive(fileId, token = getAccessToken
   const arrayBuffer = await res.arrayBuffer();
   return new Uint8Array(arrayBuffer);
 }
+
+/**
+ * Gets a file's ID by name in the Photo Vault folder.
+ */
+export async function getFileIdByName(filename, token = getAccessToken()) {
+  if (!token) return null;
+  const folderId = await getOrCreateVaultFolder(token);
+  if (!folderId) return null;
+
+  const q = `'${folderId}' in parents and name = '${filename}' and trashed = false`;
+  const res = await fetch(`${DRIVE_API_URL}/files?q=${encodeURIComponent(q)}&fields=files(id)`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+
+  if (!res.ok) return null;
+  const data = await res.json();
+  if (data.files && data.files.length > 0) {
+    return data.files[0].id;
+  }
+  return null;
+}
+
+/**
+ * Uploads a file, or updates it if it already exists in the Photo Vault.
+ */
+export async function uploadOrUpdateFileInGoogleDrive(filename, data, mimeType = 'application/json', token = getAccessToken()) {
+  if (!token) throw new Error('Not signed in to Google Drive.');
+
+  const existingFileId = await getFileIdByName(filename, token);
+  const blob = data instanceof Blob ? data : new Blob([data], { type: mimeType });
+
+  if (existingFileId) {
+    // Update existing file via PATCH
+    const res = await fetch(`${DRIVE_UPLOAD_URL}/${existingFileId}?uploadType=media`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': mimeType
+      },
+      body: blob
+    });
+
+    if (!res.ok) {
+      const err = await parseGoogleError(res);
+      throw new Error(`Google Drive update failed for ${filename}: ${err}`);
+    }
+    return await res.json();
+  } else {
+    // Create new file via POST
+    return await uploadFileToGoogleDrive(filename, data, mimeType, token);
+  }
+}
+
+/**
+ * Deletes a file by name from the Photo Vault folder in Google Drive.
+ */
+export async function deleteFileFromGoogleDrive(filename, token = getAccessToken()) {
+  if (!token) throw new Error('Not signed in to Google Drive.');
+  
+  const fileId = await getFileIdByName(filename, token);
+  if (!fileId) return; // File doesn't exist, nothing to delete
+
+  const res = await fetch(`${DRIVE_API_URL}/files/${fileId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` }
+  });
+
+  if (!res.ok) {
+    const err = await parseGoogleError(res);
+    throw new Error(`Google Drive delete failed for ${filename}: ${err}`);
+  }
+}

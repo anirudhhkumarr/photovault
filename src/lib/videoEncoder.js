@@ -46,6 +46,15 @@ async function getSupportedEncoderConfig(width, height) {
   }
 
   const candidateConfigs = [
+    // Try Main 4:4:4 10 (Format Range Extensions, Profile 4) for best color fidelity
+    { codec: 'hev1.4.10.L120.B0', muxer: 'mp4', avcType: 'hevc' },
+    { codec: 'hvc1.4.10.L120.B0', muxer: 'mp4', avcType: 'hevc' },
+    
+    // Fallback to Main 10 (Profile 2)
+    { codec: 'hev1.2.4.L120.B0', muxer: 'mp4', avcType: 'hevc' },
+    { codec: 'hvc1.2.4.L120.B0', muxer: 'mp4', avcType: 'hevc' },
+    
+    // Fallback to standard Main (Profile 1)
     { codec: 'hvc1.1.6.L120.90', muxer: 'mp4', avcType: 'hevc' },
     { codec: 'hev1.1.6.L120.90', muxer: 'mp4', avcType: 'hevc' }
   ];

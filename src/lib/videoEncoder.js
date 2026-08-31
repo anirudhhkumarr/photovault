@@ -47,11 +47,7 @@ async function getSupportedEncoderConfig(width, height) {
 
   const candidateConfigs = [
     { codec: 'hvc1.1.6.L120.90', muxer: 'mp4', avcType: 'hevc' },
-    { codec: 'hev1.1.6.L120.90', muxer: 'mp4', avcType: 'hevc' },
-    { codec: 'avc1.640033', muxer: 'mp4', avcType: 'avc' },
-    { codec: 'avc1.4d002a', muxer: 'mp4', avcType: 'avc' },
-    { codec: 'avc1.42001f', muxer: 'mp4', avcType: 'avc' },
-    { codec: 'vp09.00.10.08', muxer: 'webm', avcType: 'vp9' }
+    { codec: 'hev1.1.6.L120.90', muxer: 'mp4', avcType: 'hevc' }
   ];
 
   for (const cand of candidateConfigs) {
@@ -76,17 +72,7 @@ async function getSupportedEncoderConfig(width, height) {
     }
   }
 
-  return {
-    config: {
-      codec: 'avc1.4d002a',
-      width,
-      height,
-      bitrate: 40_000_000,
-      framerate: 1
-    },
-    muxerType: 'mp4',
-    codecFamily: 'avc'
-  };
+  throw new Error('HEVC (H.265) hardware encoding is required for frame interpolation, but it is not supported on this browser/device.');
 }
 
 /**
@@ -101,17 +87,7 @@ export async function encodeImagesToVideo(images, onProgress) {
   let rawW = firstImg.naturalWidth || firstImg.width || 1920;
   let rawH = firstImg.naturalHeight || firstImg.height || 1080;
 
-  // Maximum dimension up to 3840 (4K) to maintain razor-sharp resolution
-  const MAX_DIM = 3840;
-  if (rawW > MAX_DIM || rawH > MAX_DIM) {
-    if (rawW >= rawH) {
-      rawH = Math.round((rawH * MAX_DIM) / rawW);
-      rawW = MAX_DIM;
-    } else {
-      rawW = Math.round((rawW * MAX_DIM) / rawH);
-      rawH = MAX_DIM;
-    }
-  }
+  // Original resolution is preserved without downscaling to 4K
 
   const width = align16(rawW);
   const height = align16(rawH);

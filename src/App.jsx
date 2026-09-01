@@ -424,8 +424,11 @@ export default function App() {
           }
         } catch (e) {
           console.error('Failed to fetch blob from cloud:', e);
+          setErrorMessage(e.message || String(e));
+          throw e;
+        } finally {
+          setProgress('');
         }
-        setProgress('');
       }
     }
     return blob;
@@ -451,6 +454,8 @@ export default function App() {
       }
     } catch (e) {
       console.error('[PhotoVault] ❌ Download error:', e);
+      setErrorMessage(e.message || String(e));
+      throw e;
     }
   };
 
@@ -469,6 +474,8 @@ export default function App() {
       }
     } catch (e) {
       console.error('[PhotoVault] ❌ Photo inspection error:', e);
+      setErrorMessage(e.message || String(e));
+      throw e;
     }
   };
 
@@ -533,14 +540,13 @@ export default function App() {
       if (stillExists) {
         await saveContainerMetadataToDrive(videoId);
       } else if (getAccessToken()) {
-        try {
-          await deleteFileFromGoogleDrive(`metadata_${videoId}.json`, getAccessToken());
-        } catch (e) { console.warn(e); }
+        await deleteFileFromGoogleDrive(`metadata_${videoId}.json`, getAccessToken());
       }
       setProgress('');
     } catch (e) {
       console.error('Delete error:', e);
       setErrorMessage(e.message || String(e));
+      throw e;
     } finally {
       setIsProcessing(false);
     }
@@ -617,6 +623,12 @@ export default function App() {
           }
           // Incrementally refresh the top of the photo grid
           loadData(true);
+        });
+
+        vaultQueue.on('photo:analyzed', (item) => {
+          if (item.tempId && item.thumbnail) {
+            setUploadingFiles(prev => prev.map(f => f.id === item.tempId ? { ...f, thumbnail: item.thumbnail } : f));
+          }
         });
 
         vaultQueue.on('progress', ({ name, stats }) => {

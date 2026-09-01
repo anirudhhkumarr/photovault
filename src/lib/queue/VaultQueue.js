@@ -46,7 +46,8 @@ export class VaultQueue {
         );
       }
     } catch (err) {
-      console.warn('Could not preload photos from DB:', err);
+      console.error('Could not preload photos from DB:', err);
+      throw err;
     }
     this.isInitialized = true;
   }
@@ -63,7 +64,7 @@ export class VaultQueue {
       const arrayBuffer = await file.arrayBuffer();
       const [contentHash, fingerprint, thumbnail] = await Promise.all([
         computeContentHash(arrayBuffer),
-        extractSceneFingerprint(file).catch(() => null),
+        extractSceneFingerprint(file),
         generateThumbnail(file, 400)
       ]);
 
@@ -353,7 +354,7 @@ export class VaultQueue {
         id: tempId,
         filename: file.name,
         size: file.size,
-        thumbnail: URL.createObjectURL(file),
+        thumbnail: '',
         isUploading: true,
         file
       };

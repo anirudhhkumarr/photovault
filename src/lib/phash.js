@@ -29,7 +29,9 @@ export async function extractSceneFingerprint(file) {
     const img = new Image();
     
     img.onload = () => {
-      URL.revokeObjectURL(url);
+      setTimeout(() => {
+        try { URL.revokeObjectURL(url); } catch {}
+      }, 500);
       
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -159,8 +161,10 @@ export async function extractSceneFingerprint(file) {
     };
     
     img.onerror = (err) => {
-      URL.revokeObjectURL(url);
-      reject(err);
+      setTimeout(() => {
+        try { URL.revokeObjectURL(url); } catch {}
+      }, 500);
+      reject(new Error(`Failed to load image for scene fingerprint: ${file.name || err}`));
     };
     
     img.src = url;
@@ -214,7 +218,9 @@ export function computeSceneSimilarity(fp1, fp2) {
   // 3. Global Structural Correlation (dHash)
   let dHashMatches = 0;
   for (let i = 0; i < 64; i++) {
-    if (fp1.globalDHash[i] === fp2.globalDHash[i]) dHashMatches++;
+    if (fp1.globalDHash && fp2.globalDHash && fp1.globalDHash[i] === fp2.globalDHash[i]) {
+      dHashMatches++;
+    }
   }
   const structScore = dHashMatches / 64.0;
   
@@ -224,11 +230,10 @@ export function computeSceneSimilarity(fp1, fp2) {
 
 /**
  * Determines whether two photos belong to the same visual scene.
- * Pure visual comparison on pixels only (threshold: 0.58).
+ * Pure visual comparison on pixels only (threshold: 0.72).
  */
-export function arePhotosInSameScene(fp1, fp2, threshold = 0.80) {
+export function arePhotosInSameScene(fp1, fp2, threshold = 0.72) {
   if (!fp1 || !fp2) return false;
-  
   const score = computeSceneSimilarity(fp1, fp2);
   return score >= threshold;
 }
@@ -237,11 +242,13 @@ export function arePhotosInSameScene(fp1, fp2, threshold = 0.80) {
  * Generates a high-definition thumbnail data URL for retina displays and preview.
  */
 export async function generateThumbnail(file, maxDimension = 1440) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
-      URL.revokeObjectURL(url);
+      setTimeout(() => {
+        try { URL.revokeObjectURL(url); } catch {}
+      }, 500);
       const canvas = document.createElement('canvas');
       let width = img.width;
       let height = img.height;
@@ -266,9 +273,11 @@ export async function generateThumbnail(file, maxDimension = 1440) {
       ctx.drawImage(img, 0, 0, width, height);
       resolve(canvas.toDataURL('image/jpeg', 0.94));
     };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      resolve('');
+    img.onerror = (err) => {
+      setTimeout(() => {
+        try { URL.revokeObjectURL(url); } catch {}
+      }, 500);
+      reject(new Error(`Failed to generate thumbnail for ${file.name || 'image'}: ${err}`));
     };
     img.src = url;
   });

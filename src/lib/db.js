@@ -115,26 +115,18 @@ export async function getVideoBlob(id) {
 }
 
 export async function clearDB() {
-  try {
-    const db = await initDB();
-    await db.clear('photos');
-    await db.clear('videos');
-  } catch (e) {
-    console.error('clearDB store clear error:', e);
-  }
+  const db = await initDB();
+  await db.clear('photos');
+  await db.clear('videos');
 
-  try {
-    const keysToRemove = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && (key.startsWith('gdrive_') || key.startsWith('photovault_'))) {
-        keysToRemove.push(key);
-      }
+  const keysToRemove = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && (key.startsWith('gdrive_') || key.startsWith('photovault_'))) {
+      keysToRemove.push(key);
     }
-    keysToRemove.forEach(k => localStorage.removeItem(k));
-  } catch {
-    // Ignore
   }
+  keysToRemove.forEach(k => localStorage.removeItem(k));
 }
 
 export async function exportContainerMetadata(videoId) {
@@ -152,29 +144,24 @@ export async function exportContainerMetadata(videoId) {
 }
 
 export async function importContainerMetadata(jsonString) {
-  try {
-    const { photos, videos } = JSON.parse(jsonString);
-    const db = await initDB();
-    
-    // Upsert instead of clearing
-    if (photos && photos.length > 0) {
-      const tx = db.transaction('photos', 'readwrite');
-      for (const p of photos) {
-        await tx.store.put(p);
-      }
-      await tx.done;
+  const { photos, videos } = JSON.parse(jsonString);
+  const db = await initDB();
+  
+  // Upsert instead of clearing
+  if (photos && photos.length > 0) {
+    const tx = db.transaction('photos', 'readwrite');
+    for (const p of photos) {
+      await tx.store.put(p);
     }
-
-    if (videos && videos.length > 0) {
-      const tx = db.transaction('videos', 'readwrite');
-      for (const v of videos) {
-        await tx.store.put(v);
-      }
-      await tx.done;
-    }
-    return true;
-  } catch (err) {
-    console.error('Failed to import container DB from JSON:', err);
-    return false;
+    await tx.done;
   }
+
+  if (videos && videos.length > 0) {
+    const tx = db.transaction('videos', 'readwrite');
+    for (const v of videos) {
+      await tx.store.put(v);
+    }
+    await tx.done;
+  }
+  return true;
 }

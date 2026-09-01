@@ -126,7 +126,7 @@ export class VaultQueue {
           fingerprint: item.fingerprint,
           videoId: groupId,
           frameIndex,
-          timestamp: frameIndex * 1.0 + 0.2,
+          timestamp: frameIndex * 1.0 + 0.5,
           size: item.size,
           thumbnail: item.thumbnail,
           createdAt: Date.now()

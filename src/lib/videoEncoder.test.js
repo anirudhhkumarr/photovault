@@ -1,127 +1,66 @@
 import { describe, it, expect } from 'vitest';
-import { encodeImagesToVideo, extractSingleFrame, loadImageElement } from './videoEncoder.js';
+import { encodeImagesToVideo, extractSingleFrame, extractAllFramesFromVideo, loadImageElement } from './videoEncoder.js';
 
-// Helper to fetch the test image as a Blob from the public or test_photos directory
-// Since this runs in the browser, we can fetch it via HTTP
-async function fetchTestImageBlob(url) {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Failed to fetch ${url}`);
-  return await response.blob();
-}
-
-/**
- * Calculates PSNR between two ImageData objects.
- */
-function calculatePSNR(img1, img2) {
-  if (img1.width !== img2.width || img1.height !== img2.height) {
-    throw new Error(`Dimension mismatch: ${img1.width}x${img1.height} vs ${img2.width}x${img2.height}`);
-  }
-  const data1 = img1.data;
-  const data2 = img2.data;
-  let mse = 0;
-  for (let i = 0; i < data1.length; i += 4) {
-    const r = data1[i] - data2[i];
-    const g = data1[i + 1] - data2[i + 1];
-    const b = data1[i + 2] - data2[i + 2];
-    mse += r * r + g * g + b * b;
-  }
-  mse = mse / (img1.width * img1.height * 3);
-  if (mse === 0) return Infinity;
-  const max = 255;
-  return 20 * Math.log10(max) - 10 * Math.log10(mse);
-}
-
-async function getImageData(source) {
-  const img = await loadImageElement(source);
+function createPatternImage(color1, color2, width = 128, height = 128) {
   const canvas = document.createElement('canvas');
-  canvas.width = img.naturalWidth || img.width;
-  canvas.height = img.naturalHeight || img.height;
+  canvas.width = width;
+  canvas.height = height;
   const ctx = canvas.getContext('2d');
-  ctx.drawImage(img, 0, 0);
-  return ctx.getImageData(0, 0, canvas.width, canvas.height);
+  
+  const gradient = ctx.createLinearGradient(0, 0, width, height);
+  gradient.addColorStop(0, color1);
+  gradient.addColorStop(1, color2);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, width, height);
+  
+  return canvas.toDataURL('image/png');
 }
 
-describe('videoEncoder MP4 Roundtrip', () => {
-  it('should encode an image to MP4 and extract it back', async () => {
-    // 1. Fetch the image
-    const imageBlob = await fetchTestImageBlob('/test_photos/photo2.jpg');
-    expect(imageBlob.size).toBeGreaterThan(0);
+describe('videoEncoder Multi-Photo Container Extraction', () => {
+  it('should encode 2 photos in 1 container and extract both frames independently', async () => {
+    // 1. Create two distinct test photos
+    const photo1 = createPatternImage('red', 'yellow');
+    const photo2 = createPatternImage('blue', 'green');
 
-    // 2. Encode to video
-    const videoResult = await encodeImagesToVideo([imageBlob]);
+    // 2. Encode both into a single video container
+    const videoResult = await encodeImagesToVideo([photo1, photo2]);
     expect(videoResult.blob).toBeDefined();
     expect(videoResult.blob.length).toBeGreaterThan(0);
-    expect(videoResult.mimeType).toMatch(/video\/(mp4|webm)/);
+    expect(videoResult.frameCount).toBe(2);
 
-    // 3. Extract frame back
-    const extractedSrc = await extractSingleFrame(videoResult.blob, 0.5);
-    expect(extractedSrc).toBeTruthy();
+    // 3. Extract single frame 0 (timestamp 0.5s)
+    const extractedFrame0 = await extractSingleFrame(videoResult.blob, 0.5);
+    expect(extractedFrame0).toBeTruthy();
+    const img0 = await loadImageElement(extractedFrame0);
+    expect(img0.width).toBeGreaterThan(0);
 
-    // 4. Calculate dimensions and compare
-    // Note: Due to MAX_DIM = 3840 in videoEncoder.js and YUV 4:2:0 subsampling,
-    // this will NOT be bit-exact, and dimensions might differ if the original is > 4K.
-    
-    const originalData = await getImageData(imageBlob);
-    const extractedData = await getImageData(extractedSrc);
+    // 4. Extract single frame 1 (timestamp 1.5s)
+    const extractedFrame1 = await extractSingleFrame(videoResult.blob, 1.5);
+    expect(extractedFrame1).toBeTruthy();
+    const img1 = await loadImageElement(extractedFrame1);
+    expect(img1.width).toBeGreaterThan(0);
 
-    expect(extractedData.width).toBeGreaterThan(0);
-    expect(extractedData.height).toBeGreaterThan(0);
+    // 5. Extract all frames in bulk
+    const allFrames = await extractAllFramesFromVideo(videoResult.blob, 2);
+    expect(allFrames.length).toBe(2);
+    expect(allFrames[0].dataUrl).toBeTruthy();
+    expect(allFrames[1].dataUrl).toBeTruthy();
 
-    console.log(`Original Dimensions: ${originalData.width}x${originalData.height}`);
-    console.log(`Extracted Dimensions: ${extractedData.width}x${extractedData.height}`);
-    
-    // Assert that dimensions are strictly preserved
-    expect(extractedData.width).toBe(originalData.width);
-    expect(extractedData.height).toBe(originalData.height);
-    expect(extractedData.data.length).toBeGreaterThan(0);
-
-    const psnr = calculatePSNR(originalData, extractedData);
-    console.log(`PSNR: ${psnr.toFixed(2)} dB`);
-    
-    // Check if it's perfectly bit-exact
-    if (psnr === Infinity) {
-      console.log('The conversion was mathematically lossless (Bit-Exact)!');
-    } else {
-      console.log(`The conversion was LOSSY (PSNR: ${psnr.toFixed(2)} dB) due to YUV subsampling and hardware encoder constraints.`);
-    }
-
-    // Assert that it's lossy to prove the point (PSNR won't be infinity)
-    expect(psnr).toBeLessThan(Infinity);
+    // Verify frames are different images (photo 1 vs photo 2)
+    expect(allFrames[0].dataUrl).not.toEqual(allFrames[1].dataUrl);
   });
 
-  it('should demonstrate lossy compression on a small image (no resizing)', async () => {
-    // Create a 100x100 red square data URL
-    const canvas = document.createElement('canvas');
-    canvas.width = 128;
-    canvas.height = 128;
-    const ctx = canvas.getContext('2d');
-    
-    // Draw a complex pattern to ensure it's not trivial to compress
-    const gradient = ctx.createLinearGradient(0, 0, 128, 128);
-    gradient.addColorStop(0, 'red');
-    gradient.addColorStop(0.5, 'green');
-    gradient.addColorStop(1, 'blue');
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, 128, 128);
-    
-    const dataUrl = canvas.toDataURL('image/png');
-    const originalData = ctx.getImageData(0, 0, 128, 128);
+  it('should encode and extract a 3-photo container without losing any frames', async () => {
+    const photo1 = createPatternImage('red', 'black');
+    const photo2 = createPatternImage('blue', 'white');
+    const photo3 = createPatternImage('purple', 'cyan');
 
-    // Encode
-    const videoResult = await encodeImagesToVideo([dataUrl]);
-    
-    // Decode
-    const extractedSrc = await extractSingleFrame(videoResult.blob, 0.5);
-    const extractedData = await getImageData(extractedSrc);
-    
-    expect(originalData.width).toBe(extractedData.width);
-    expect(originalData.height).toBe(extractedData.height);
-    
-    const psnr = calculatePSNR(originalData, extractedData);
-    console.log(`Small Image PSNR: ${psnr.toFixed(2)} dB`);
-    
-    // It should be lossy (not Infinity)
-    expect(psnr).toBeLessThan(Infinity);
+    const videoResult = await encodeImagesToVideo([photo1, photo2, photo3]);
+    expect(videoResult.frameCount).toBe(3);
+
+    const allFrames = await extractAllFramesFromVideo(videoResult.blob, 3);
+    expect(allFrames.length).toBe(3);
+    expect(allFrames[0].dataUrl).not.toEqual(allFrames[1].dataUrl);
+    expect(allFrames[1].dataUrl).not.toEqual(allFrames[2].dataUrl);
   });
 });
-

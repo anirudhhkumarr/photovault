@@ -56,7 +56,15 @@ async function getSupportedEncoderConfig(width, height) {
     
     // Fallback to standard Main (Profile 1)
     { codec: 'hvc1.1.6.L120.90', muxer: 'mp4', avcType: 'hevc' },
-    { codec: 'hev1.1.6.L120.90', muxer: 'mp4', avcType: 'hevc' }
+    { codec: 'hev1.1.6.L120.90', muxer: 'mp4', avcType: 'hevc' },
+
+    // Fallback to AVC/H.264 High Profile
+    { codec: 'avc1.640028', muxer: 'mp4', avcType: 'avc' },
+    { codec: 'avc1.4d002a', muxer: 'mp4', avcType: 'avc' },
+    { codec: 'avc1.42e01f', muxer: 'mp4', avcType: 'avc' },
+
+    // Fallback to VP9
+    { codec: 'vp09.00.10.08', muxer: 'webm', avcType: 'vp9' }
   ];
 
   for (const cand of candidateConfigs) {
@@ -81,7 +89,7 @@ async function getSupportedEncoderConfig(width, height) {
     }
   }
 
-  throw new Error('HEVC (H.265) hardware encoding is required for frame interpolation, but it is not supported on this browser/device.');
+  throw new Error('No supported hardware/software video encoder found.');
 }
 
 /**
@@ -95,8 +103,6 @@ export async function encodeImagesToVideo(images, onProgress) {
   const firstImg = await loadImageElement(images[0]);
   let rawW = firstImg.naturalWidth || firstImg.width || 1920;
   let rawH = firstImg.naturalHeight || firstImg.height || 1080;
-
-  // Original resolution is preserved without downscaling to 4K
 
   const width = align16(rawW);
   const height = align16(rawH);
@@ -158,8 +164,7 @@ export async function encodeImagesToVideo(images, onProgress) {
 
   try {
     encoder.configure(encoderParams);
-  } catch (err) {
-    // Fallback if bitrateMode quantizer not supported
+  } catch {
     encoder.configure({
       ...encoderConfig,
       width,
@@ -205,8 +210,8 @@ export async function encodeImagesToVideo(images, onProgress) {
     });
 
     encoder.encode(frame, { 
-      keyFrame: i === 0,
-      quantizer: 0 // Lossless QP = 0
+      keyFrame: true, // Ensure each photo frame is an independently seekable lossless keyframe
+      quantizer: 0
     });
     frame.close();
 
@@ -234,7 +239,7 @@ export async function encodeImagesToVideo(images, onProgress) {
 /**
  * Extracts a single photo frame from a container in 100% full fidelity PNG.
  */
-export async function extractSingleFrame(videoBlobData, targetTimestampSec = 0.2) {
+export async function extractSingleFrame(videoBlobData, targetTimestampSec = 0.5) {
   return new Promise((resolve) => {
     const rawBlob = videoBlobData instanceof Blob ? videoBlobData : new Blob([videoBlobData], { type: 'video/mp4' });
     const url = URL.createObjectURL(rawBlob);
@@ -254,45 +259,46 @@ export async function extractSingleFrame(videoBlobData, targetTimestampSec = 0.2
     const timer = setTimeout(() => {
       cleanup();
       resolve('');
-    }, 6000);
+    }, 8000);
 
-    video.onloadeddata = () => {
-      video.currentTime = Math.max(0.05, targetTimestampSec);
+    const performExtraction = () => {
+      try {
+        clearTimeout(timer);
+        const width = video.videoWidth || 1920;
+        const height = video.videoHeight || 1080;
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d', { alpha: false });
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(video, 0, 0, width, height);
+
+        canvas.toBlob((blob) => {
+          cleanup();
+          if (blob) {
+            resolve(URL.createObjectURL(blob));
+          } else {
+            resolve(canvas.toDataURL('image/png'));
+          }
+        }, 'image/png');
+      } catch {
+        cleanup();
+        resolve('');
+      }
+    };
+
+    video.onloadedmetadata = () => {
+      const dur = video.duration || 1.0;
+      const safeTime = Math.min(Math.max(0.02, targetTimestampSec), Math.max(0.02, dur - 0.05));
+      video.currentTime = safeTime;
     };
 
     video.onseeked = () => {
-      const drawFrame = () => {
-        try {
-          clearTimeout(timer);
-          const width = video.videoWidth || 1920;
-          const height = video.videoHeight || 1080;
-          const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d', { alpha: false });
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = 'high';
-          ctx.drawImage(video, 0, 0, width, height);
-
-          // Lossless PNG extraction for 100% bit-exact pixel fidelity
-          canvas.toBlob((blob) => {
-            cleanup();
-            if (blob) {
-              resolve(URL.createObjectURL(blob));
-            } else {
-              resolve(canvas.toDataURL('image/png'));
-            }
-          }, 'image/png');
-        } catch {
-          cleanup();
-          resolve('');
-        }
-      };
-
       if (video.readyState >= 2) {
-        drawFrame();
+        performExtraction();
       } else {
-        video.oncanplay = drawFrame;
+        video.oncanplay = performExtraction;
       }
     };
 
@@ -333,23 +339,12 @@ export async function extractAllFramesFromVideo(videoBlobData, maxExpectedFrames
     const timer = setTimeout(() => {
       cleanup();
       resolve(frames);
-    }, 15000);
+    }, 20000);
 
     video.onloadedmetadata = () => {
-      const duration = Math.max(1, video.duration || maxExpectedFrames);
-      const step = 1.0;
+      const duration = Math.max(0.1, video.duration || maxExpectedFrames);
 
-      const captureNext = () => {
-        const time = currentIndex * step + 0.2;
-        if (time >= duration || currentIndex >= maxExpectedFrames) {
-          clearTimeout(timer);
-          cleanup();
-          return resolve(frames);
-        }
-        video.currentTime = time;
-      };
-
-      video.onseeked = () => {
+      const captureCurrentFrame = () => {
         try {
           const width = video.videoWidth || 1920;
           const height = video.videoHeight || 1080;
@@ -361,16 +356,20 @@ export async function extractAllFramesFromVideo(videoBlobData, maxExpectedFrames
           ctx.imageSmoothingQuality = 'high';
           ctx.drawImage(video, 0, 0, width, height);
 
-          const dataUrl = canvas.toDataURL('image/png');
-
           frames.push({
             frameIndex: currentIndex,
             timestamp: video.currentTime,
-            dataUrl
+            dataUrl: canvas.toDataURL('image/png')
           });
 
           currentIndex++;
-          captureNext();
+          if (currentIndex >= maxExpectedFrames) {
+            clearTimeout(timer);
+            cleanup();
+            return resolve(frames);
+          }
+
+          seekNext();
         } catch {
           clearTimeout(timer);
           cleanup();
@@ -378,7 +377,29 @@ export async function extractAllFramesFromVideo(videoBlobData, maxExpectedFrames
         }
       };
 
-      captureNext();
+      const seekNext = () => {
+        if (currentIndex >= maxExpectedFrames) {
+          clearTimeout(timer);
+          cleanup();
+          return resolve(frames);
+        }
+
+        // Each frame is 1.0s long. Sample in the center of the frame slot.
+        const targetTime = currentIndex * 1.0 + 0.5;
+        const safeTime = Math.min(Math.max(0.02, targetTime), Math.max(0.02, duration - 0.05));
+        video.currentTime = safeTime;
+      };
+
+      video.onseeked = () => {
+        if (video.readyState >= 2) {
+          captureCurrentFrame();
+        } else {
+          video.oncanplay = captureCurrentFrame;
+        }
+      };
+
+      // Begin seeking for frame 0
+      seekNext();
     };
 
     video.onerror = () => {

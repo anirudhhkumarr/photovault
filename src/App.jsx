@@ -433,7 +433,7 @@ export default function App() {
     try {
       const containerBlob = await getOrFetchVideoBlob(photo.videoId);
       if (containerBlob) {
-        const frameUrl = await extractSingleFrame(containerBlob, photo.timestamp || 0.2);
+        const frameUrl = await extractSingleFrame(containerBlob, photo.timestamp || 0.5);
         if (frameUrl) {
           const res = await fetch(frameUrl);
           const blob = await res.blob();
@@ -451,7 +451,7 @@ export default function App() {
     try {
       const containerBlob = await getOrFetchVideoBlob(photo.videoId);
       if (containerBlob) {
-        const frameUrl = await extractSingleFrame(containerBlob, photo.timestamp || 0.2);
+        const frameUrl = await extractSingleFrame(containerBlob, photo.timestamp || 0.5);
         if (frameUrl) {
           setFullPhotoUrl(frameUrl);
         }
@@ -503,7 +503,7 @@ export default function App() {
               for (let i = 0; i < remainingInGroup.length; i++) {
                 await updatePhoto(remainingInGroup[i].id, {
                   frameIndex: i,
-                  timestamp: i * 1.0 + 0.2
+                  timestamp: i * 1.0 + 0.5
                 });
               }
             } else {

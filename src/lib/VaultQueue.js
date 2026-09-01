@@ -23,7 +23,20 @@ export function createVaultPipeline(services) {
   // Define Handlers using the new Composable PipelineRouter
   router.use('ANALYZE_PHOTO', async (task, context) => {
     const file = task.payload.file;
+    const skeletonId = task.payload.skeletonId;
+    
+    context.queue.dispatchEvent(new CustomEvent('vault:progress', { detail: { itemIds: [skeletonId], state: 'analyzing' } }));
+    
     const hash = await services.db.getFileHash(file);
+    
+    // Deduplication check
+    const existingPhoto = await services.db.getPhoto(hash);
+    if (existingPhoto) {
+      context.queue.dispatchEvent(new CustomEvent('vault:progress', { detail: { itemIds: [skeletonId], state: 'duplicate' } }));
+      context.queue.complete(task.id, { isDuplicate: true, skeletonId });
+      return;
+    }
+
     const bitmap = await services.image.createImageBitmap(file);
     const features = await services.phash.analyzeVisualFeatures(file);
     
@@ -45,8 +58,9 @@ export function createVaultPipeline(services) {
   router.use('ENCODE_CONTAINER', async (task, context) => {
     const cluster = task.payload;
     const containerId = `vault_${Date.now()}_${cluster.length}_${cluster[0].id.slice(0,8)}`;
+    const itemIds = cluster.map(p => p.skeletonId);
     
-    context.queue.dispatchEvent(new CustomEvent('vault:progress', { detail: { message: `Encoding cluster of ${cluster.length} photos...` } }));
+    context.queue.dispatchEvent(new CustomEvent('vault:progress', { detail: { itemIds, state: 'packing', message: `Encoding cluster of ${cluster.length} photos...` } }));
     
     const { blob, mimeType, manifest } = await services.encoder.encodeContainer(cluster, (msg) => {
       context.queue.dispatchEvent(new CustomEvent('vault:progress', { detail: { message: msg } }));
@@ -62,13 +76,12 @@ export function createVaultPipeline(services) {
         width: photo.width,
         height: photo.height,
         thumbnailDataUrl: photo.thumbnailDataUrl,
-        hash: photo.id,
         videoId: containerId,
         frameIndex: i,
         timestamp: i + 0.5,
         createdAt: Date.now(),
         skeletonId: photo.skeletonId,
-        syncStatus: 'pending'
+        syncStatus: 'packing'
       };
       await services.db.addPhoto(dbPhoto);
       cluster[i] = dbPhoto;
@@ -108,7 +121,8 @@ export function createVaultPipeline(services) {
       originalTotalBytes = dbVideo.originalTotalBytes;
     }
     
-    context.queue.dispatchEvent(new CustomEvent('vault:progress', { detail: { message: `Uploading ${containerId}.mp4...` } }));
+    const itemIds = photos.map(p => p.skeletonId);
+    context.queue.dispatchEvent(new CustomEvent('vault:progress', { detail: { itemIds, state: 'uploading', message: `Uploading ${containerId}.mp4...` } }));
     
     try {
       await services.drive.uploadContainer({
@@ -148,8 +162,18 @@ export function createVaultPipeline(services) {
     const task = e.detail;
     
     if (task.type === 'ANALYZE_PHOTO') {
-      const photoData = { ...task.result, syncStatus: 'pending' };
+      if (task.result.isDuplicate) return;
+      
+      const photoData = { ...task.result, syncStatus: 'analyzed' };
       const bufferSize = clusterBuffer.reduce((sum, p) => sum + p.originalSize, 0);
+      
+      // Intelligent scene flushing
+      if (clusterBuffer.length > 0) {
+        const prev = clusterBuffer[clusterBuffer.length - 1];
+        if (prev.fingerprint && photoData.fingerprint && !services.phash.isSameScene(prev.fingerprint, photoData.fingerprint)) {
+          forceFlushCluster();
+        }
+      }
       
       clusterBuffer.push(photoData);
       const newSize = bufferSize + photoData.originalSize;

@@ -9,7 +9,16 @@ export default function Header({ profile, onConnect, onDisconnect, onSync, queue
       
       <div className="header-actions">
         {totalSavedBytes > 0 && (
-          <div style={{ fontSize: '0.875rem', color: 'var(--success)' }}>
+          <div style={{ 
+            fontSize: '0.85rem', 
+            fontWeight: 600,
+            color: 'var(--success)', 
+            backgroundColor: 'rgba(34, 197, 94, 0.1)',
+            padding: '0.4rem 0.8rem',
+            borderRadius: '999px',
+            border: '1px solid rgba(34, 197, 94, 0.2)',
+            boxShadow: '0 0 10px rgba(34, 197, 94, 0.2)'
+          }}>
             Saved: {savedMb} MB
           </div>
         )}

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Header from './components/Header';
 import PhotoGrid from './components/PhotoGrid';
 import InspectorModal from './components/InspectorModal';
@@ -14,7 +14,7 @@ import { analyzeVisualFeatures, isSameScene } from './lib/phash';
 const defaultServices = {
   encoder: { encodeContainer, extractFrame },
   drive: { uploadContainer, syncFromDrive, downloadContainer, deleteContainerItem },
-  db: { getFileHash, addPhoto, exportContainerMetadata, clearDB, deletePhoto, addVideo, getVideo, deleteVideo, getAllVideos },
+  db: { getAllPhotos, getFileHash, addPhoto, exportContainerMetadata, clearDB, deletePhoto, addVideo, getVideo, deleteVideo, getAllVideos },
   phash: { analyzeVisualFeatures, isSameScene },
   image: { createImageBitmap: (f) => window.createImageBitmap(f) }
 };
@@ -35,6 +35,7 @@ function App() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [progressMsg, setProgressMsg] = useState('');
   const [uploadStats, setUploadStats] = useState({ active: false, completed: 0, total: 0 });
+  const photoUpdatesQueue = useRef(new Map());
 
   // Load photos from DB on mount
   const loadData = async () => {
@@ -94,14 +95,38 @@ function App() {
     }
   }, []);
 
+  // Batched UI updater to prevent React stuttering
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (photoUpdatesQueue.current.size > 0) {
+        setPhotos(prev => {
+          const next = [...prev];
+          let changed = false;
+          photoUpdatesQueue.current.forEach((update, id) => {
+            const idx = next.findIndex(p => p.id === id || p.skeletonId === id);
+            if (idx !== -1) {
+              next[idx] = { ...next[idx], ...update };
+              changed = true;
+            }
+          });
+          photoUpdatesQueue.current.clear();
+          return changed ? next : prev;
+        });
+      }
+    }, 150);
+    return () => clearInterval(timer);
+  }, []);
+
   // Hook up VaultQueue listeners to UI state
   useEffect(() => {
     const handleStarted = () => setQueueIdle(false);
     
-    const handleIdle = () => {
-      setQueueIdle(true);
-      // Force flush any remaining items in the buffer when queue goes idle
-      forceFlushCluster();
+    const handleIdle = (e) => {
+      // ONLY force flush when the ANALYZE_PHOTO queue is specifically idle
+      if (e.detail && e.detail.type === 'ANALYZE_PHOTO') {
+        setQueueIdle(true);
+        forceFlushCluster();
+      }
     };
     
     const handleError = (e) => {
@@ -113,7 +138,12 @@ function App() {
       
       if (task.type === 'ANALYZE_PHOTO') {
         const photoData = task.result;
-        setPhotos(prev => prev.map(p => p.id === photoData.skeletonId ? photoData : p));
+        if (photoData.isDuplicate) {
+          // Immediately drop duplicates from the UI
+          setPhotos(prev => prev.filter(p => p.skeletonId !== photoData.skeletonId));
+          return;
+        }
+        photoUpdatesQueue.current.set(photoData.skeletonId, photoData);
       }
       
       if (task.type === 'UPLOAD_CONTAINER') {
@@ -134,7 +164,19 @@ function App() {
       }
     };
 
-    const handleProgress = (e) => setProgressMsg(e.detail.message);
+    const handleProgress = (e) => {
+      const { message, itemIds, state } = e.detail;
+      if (message) setProgressMsg(message);
+      if (itemIds && state) {
+        itemIds.forEach(id => {
+          if (state === 'duplicate') {
+             setPhotos(prev => prev.filter(p => p.skeletonId !== id));
+          } else {
+             photoUpdatesQueue.current.set(id, { syncStatus: state });
+          }
+        });
+      }
+    };
 
     vaultQueue.addEventListener('task:started', handleStarted);
     vaultQueue.addEventListener('idle', handleIdle);
@@ -183,6 +225,11 @@ function App() {
 
   const handleFilesAdded = async (files) => {
     try {
+      if (!profile) {
+        setError(new Error("Please connect to Google Drive first before uploading photos."));
+        return;
+      }
+
       // Filter out non-images and directories
       const imageFiles = files.filter(f => f.type && f.type.startsWith('image/'));
       
@@ -207,7 +254,8 @@ function App() {
           isSkeleton: true,
           file: f,
           originalName: f.name,
-          createdAt: Date.now()
+          createdAt: Date.now(),
+          syncStatus: 'reading'
         };
       });
       

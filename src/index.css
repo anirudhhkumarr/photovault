@@ -1,15 +1,16 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 :root {
-  --bg-color: #000000;
-  --text-color: #f5f5f7;
-  --text-muted: #86868b;
-  --glass-bg: rgba(28, 28, 30, 0.7);
+  --bg-color: #09090b;
+  --card-bg: #18181b;
+  --text-color: #f8fafc;
+  --text-muted: #94a3b8;
+  --glass-bg: rgba(24, 24, 27, 0.6);
   --glass-border: rgba(255, 255, 255, 0.08);
-  --primary: #0071e3;
-  --primary-hover: #0077ED;
-  --danger: #ff453a;
-  --success: #32d74b;
+  --primary: #3b82f6;
+  --primary-hover: #60a5fa;
+  --danger: #ef4444;
+  --success: #22c55e;
   --ease-apple: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
@@ -20,13 +21,14 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", sans-serif;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
   background-color: var(--bg-color);
   color: var(--text-color);
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
   overflow-x: hidden;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.025em;
+  line-height: 1.6;
 }
 
 /* Glassmorphism utility */
@@ -58,7 +60,7 @@ body {
   top: 1.5rem;
   z-index: 10;
   border-radius: 24px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 20px 40px rgba(0,0,0,0.4);
 }
 
 .header-brand {

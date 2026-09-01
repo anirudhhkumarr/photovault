@@ -31,10 +31,25 @@ export default function PhotoCard({ photo, onClick, onLazyLoad }) {
   }, [photo, onLazyLoad]);
 
   if (photo.isSkeleton) {
+    const isUpload = !!photo.file;
+    const objectUrl = isUpload ? URL.createObjectURL(photo.file) : null;
+    
     return (
       <div className="photo-card skeleton" ref={cardRef}>
-        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', opacity: 0.5 }}>
-          <div className="spinner" style={{ width: '24px', height: '24px', borderWidth: '2px', borderTopColor: 'var(--text-muted)' }}></div>
+        {isUpload && objectUrl && (
+           <img 
+             src={objectUrl} 
+             alt="Uploading..." 
+             style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'grayscale(100%) opacity(0.5)' }} 
+           />
+        )}
+        <div className="skeleton-overlay" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.3)' }}>
+          <div className="spinner" style={{ width: '24px', height: '24px', borderWidth: '2px', borderTopColor: 'var(--primary, #fff)' }}></div>
+          {photo.syncStatus && (
+            <div style={{ marginTop: '8px', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-color, #fff)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              {photo.syncStatus.replace('_', ' ')}
+            </div>
+          )}
         </div>
       </div>
     );

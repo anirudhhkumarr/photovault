@@ -7,8 +7,9 @@ export default defineConfig({
   plugins: [react()],
   test: {
     environment: 'jsdom',
+    setupFiles: ['./src/tests/testHelpers.js'],
     browser: {
-      enabled: false,
+      enabled: true,
       name: 'chromium',
       provider: 'playwright',
       // Disable screenshot failures as per spec

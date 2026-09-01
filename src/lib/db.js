@@ -41,3 +41,50 @@ export async function setSyncMeta(key, value) {
   const db = await initDB();
   await db.put('sync_meta', { key, value });
 }
+
+export async function addPhoto(photo) {
+  const db = await initDB();
+  return db.put('photos', photo);
+}
+
+export async function getAllPhotos() {
+  const db = await initDB();
+  return db.getAll('photos');
+}
+
+export async function deletePhoto(id) {
+  const db = await initDB();
+  return db.delete('photos', id);
+}
+
+export async function clearDB() {
+  const db = await initDB();
+  await db.clear('photos');
+  await db.clear('videos');
+  await db.clear('sync_meta');
+}
+
+export async function addVideo(video) {
+  const db = await initDB();
+  return db.put('videos', video);
+}
+
+export async function getAllVideos() {
+  const db = await initDB();
+  return db.getAll('videos');
+}
+
+export async function getFileHash(file) {
+  const buffer = await file.arrayBuffer();
+  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+export async function exportContainerMetadata(videoId) {
+  const db = await initDB();
+  const tx = db.transaction('photos', 'readonly');
+  const index = tx.store.index('videoId');
+  const photos = await index.getAll(videoId);
+  return JSON.stringify(photos, null, 2);
+}

@@ -9,7 +9,7 @@ export default function ErrorBanner({ error, onDismiss }) {
         <AlertTriangle size={20} color="var(--danger)" />
         <span style={{ fontWeight: 500 }}>{error.message || String(error)}</span>
       </div>
-      <button onClick={onDismiss} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer' }}>
+      <button data-testid="close-error" onClick={onDismiss} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer' }}>
         <X size={20} />
       </button>
     </div>

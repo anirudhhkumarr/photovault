@@ -154,3 +154,4 @@ export function calculateSimilarity(feat1, feat2) {
   const score = (0.50 * top12_spatial_avg) + (0.30 * color_score) + (0.20 * struct_score);
   return score;
 }
+export function isSameScene(feat1, feat2) { return calculateSimilarity(feat1, feat2) > 0.85; }

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { TaskQueue } from '../lib/TaskQueue';
+import { TaskQueue } from '../../lib/TaskQueue';
 
 describe('TaskQueue Invariants', () => {
   it('should enforce hard-failing fail-fast principle', async () => {

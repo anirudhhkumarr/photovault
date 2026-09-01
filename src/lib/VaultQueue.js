@@ -1,47 +1,142 @@
 import { TaskQueue } from './TaskQueue';
-// We will import actual logic handlers here later
-// import { analyzePhoto } from './phash';
-// import { encodeContainer } from './videoEncoder';
-// import { uploadContainer } from './googleDrive';
+import { PipelineRouter } from './PipelineRouter';
 
-export const vaultQueue = new TaskQueue();
+export function createVaultPipeline(services) {
+  const vaultQueue = new TaskQueue();
+  const router = new PipelineRouter();
 
-// Orchestrate the pipeline: ANALYZE_PHOTO (Concurrency 4) -> Clustering -> ENCODE_CONTAINER (Concurrency 1) -> UPLOAD_CONTAINER (Concurrency 2).
-vaultQueue.registerType('ANALYZE_PHOTO', 4);
-vaultQueue.registerType('ENCODE_CONTAINER', 1);
-vaultQueue.registerType('UPLOAD_CONTAINER', 2);
+  vaultQueue.registerType('ANALYZE_PHOTO', 4);
+  vaultQueue.registerType('ENCODE_CONTAINER', 1);
+  vaultQueue.registerType('UPLOAD_CONTAINER', 2);
 
-vaultQueue.addEventListener('task:started', async (e) => {
-  const task = e.detail;
-  try {
-    if (task.type === 'ANALYZE_PHOTO') {
-      // result = await analyzePhoto(task.payload.file);
-      // vaultQueue.complete(task.id, result);
-    } else if (task.type === 'ENCODE_CONTAINER') {
-      // result = await encodeContainer(task.payload);
-      // vaultQueue.complete(task.id, result);
-    } else if (task.type === 'UPLOAD_CONTAINER') {
-      // result = await uploadContainer(task.payload);
-      // vaultQueue.complete(task.id, result);
+  const clusterBuffer = [];
+  const CLUSTER_THRESHOLD_ITEMS = 10;
+  const CLUSTER_THRESHOLD_BYTES = 150 * 1024 * 1024; // 150MB
+
+  function forceFlushCluster() {
+    if (clusterBuffer.length === 0) return;
+    const cluster = [...clusterBuffer];
+    clusterBuffer.length = 0;
+    vaultQueue.enqueue('ENCODE_CONTAINER', cluster);
+  }
+
+  // Define Handlers using the new Composable PipelineRouter
+  router.use('ANALYZE_PHOTO', async (task, context) => {
+    const file = task.payload.file;
+    const hash = await services.db.getFileHash(file);
+    const bitmap = await services.image.createImageBitmap(file);
+    const features = await services.phash.analyzeVisualFeatures(file);
+    
+    const photoData = {
+      id: hash,
+      file,
+      originalName: file.name,
+      originalSize: file.size,
+      mimeType: file.type,
+      width: bitmap.width,
+      height: bitmap.height,
+      ...features,
+      skeletonId: task.payload.skeletonId
+    };
+    
+    context.queue.complete(task.id, photoData);
+  });
+
+  router.use('ENCODE_CONTAINER', async (task, context) => {
+    const cluster = task.payload;
+    const containerId = `vault_${cluster[0].id.slice(0,8)}_${Date.now()}`;
+    
+    context.queue.dispatchEvent(new CustomEvent('vault:progress', { detail: { message: `Encoding cluster of ${cluster.length} photos...` } }));
+    
+    const { blob, mimeType, manifest } = await services.encoder.encodeContainer(cluster, (msg) => {
+      context.queue.dispatchEvent(new CustomEvent('vault:progress', { detail: { message: msg } }));
+    });
+    
+    for (let i = 0; i < cluster.length; i++) {
+      const photo = cluster[i];
+      const dbPhoto = {
+        id: photo.id,
+        filename: photo.originalName,
+        mimeType: photo.mimeType,
+        originalSize: photo.originalSize,
+        width: photo.width,
+        height: photo.height,
+        thumbnailDataUrl: photo.thumbnailDataUrl,
+        hash: photo.id,
+        fingerprint: photo.fingerprint,
+        videoId: containerId,
+        frameIndex: i,
+        timestamp: i + 0.5,
+        createdAt: Date.now(),
+        skeletonId: photo.skeletonId
+      };
+      await services.db.addPhoto(dbPhoto);
+      cluster[i] = dbPhoto;
     }
-  } catch (error) {
-    vaultQueue.fail(task.id, error);
-  }
-});
+    
+    const originalTotalBytes = cluster.reduce((sum, p) => sum + p.originalSize, 0);
+    
+    context.queue.complete(task.id, {
+      containerId,
+      blob,
+      mimeType,
+      manifest,
+      originalTotalBytes,
+      itemCount: cluster.length,
+      photos: cluster
+    });
+  });
 
-// A buffer for clustering
-export const clusterBuffer = [];
-// This will be called when an ANALYZE_PHOTO task completes successfully.
-vaultQueue.addEventListener('task:completed', (e) => {
-  const task = e.detail;
-  if (task.type === 'ANALYZE_PHOTO') {
-    // 1. Add to clusterBuffer
-    // 2. Run clustering logic
-    // 3. If threshold met (10 items or 25MB), or similarity boundary hit:
-    //    const group = flushCluster();
-    //    vaultQueue.enqueue('ENCODE_CONTAINER', group);
-  } else if (task.type === 'ENCODE_CONTAINER') {
-    // Then upload
-    // vaultQueue.enqueue('UPLOAD_CONTAINER', task.result);
-  }
-});
+  router.use('UPLOAD_CONTAINER', async (task, context) => {
+    const { containerId, blob, manifest, originalTotalBytes, photos } = task.payload;
+    
+    context.queue.dispatchEvent(new CustomEvent('vault:progress', { detail: { message: `Uploading ${containerId}.mp4...` } }));
+    
+    await services.drive.uploadContainer({
+      groupId: containerId,
+      blob,
+      manifest,
+      fullPhotos: photos
+    });
+    
+    context.queue.complete(task.id, { containerId, originalTotalBytes, photos });
+  });
+
+  // Attach PipelineRouter to TaskQueue
+  vaultQueue.addEventListener('task:started', async (e) => {
+    const task = e.detail;
+    try {
+      await router.dispatch(task, { queue: vaultQueue, services });
+    } catch (error) {
+      vaultQueue.fail(task.id, error);
+    }
+  });
+
+  vaultQueue.addEventListener('task:completed', (e) => {
+    const task = e.detail;
+    
+    if (task.type === 'ANALYZE_PHOTO') {
+      const photoData = task.result;
+      const bufferSize = clusterBuffer.reduce((sum, p) => sum + p.originalSize, 0);
+      
+      if (clusterBuffer.length > 0) {
+        const prev = clusterBuffer[clusterBuffer.length - 1];
+        if (!services.phash.isSameScene(prev.fingerprint, photoData.fingerprint)) {
+          forceFlushCluster();
+        }
+      }
+      
+      clusterBuffer.push(photoData);
+      const newSize = bufferSize + photoData.originalSize;
+      
+      if (clusterBuffer.length >= CLUSTER_THRESHOLD_ITEMS || newSize >= CLUSTER_THRESHOLD_BYTES) {
+        forceFlushCluster();
+      }
+      
+    } else if (task.type === 'ENCODE_CONTAINER') {
+      vaultQueue.enqueue('UPLOAD_CONTAINER', task.result);
+    }
+  });
+
+  return { vaultQueue, forceFlushCluster };
+}

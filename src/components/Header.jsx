@@ -17,7 +17,7 @@ export function Header({
       {/* Left side: Title and Cloud Status */}
       <div className="flex items-center gap-6">
         <div className="flex items-center gap-3">
-          <img src="/logo.png" alt="PhotoVault Logo" style={{ width: '32px', height: '32px' }} />
+          <img src="./logo.png" alt="PhotoVault Logo" style={{ width: '32px', height: '32px' }} />
           <div>
             <h1 className="text-title" style={{ fontSize: '24px', margin: 0, lineHeight: 1 }}>
               PhotoVault

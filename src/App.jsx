@@ -34,6 +34,7 @@ function App() {
   const [totalSavedBytes, setTotalSavedBytes] = useState(0);
   const [isSyncing, setIsSyncing] = useState(false);
   const [progressMsg, setProgressMsg] = useState('');
+  const [uploadStats, setUploadStats] = useState({ active: false, completed: 0, total: 0 });
 
   // Load photos from DB on mount
   const loadData = async () => {
@@ -107,8 +108,19 @@ function App() {
       }
       
       if (task.type === 'UPLOAD_CONTAINER') {
-        const { originalTotalBytes } = task.result;
+        const { originalTotalBytes, photos } = task.result;
         setTotalSavedBytes(prev => prev + (originalTotalBytes * 0.85));
+        
+        setUploadStats(prev => {
+          if (!prev.active) return prev;
+          const newCompleted = prev.completed + (photos ? photos.length : 0);
+          return {
+            ...prev,
+            completed: newCompleted,
+            active: newCompleted < prev.total
+          };
+        });
+        
         loadData(); // Reload photos to update syncStatus to 'synced'
       }
     };
@@ -179,6 +191,12 @@ function App() {
       }
       
       if (imageFiles.length === 0) return;
+      
+      setUploadStats(prev => ({
+        active: true,
+        completed: prev.active ? prev.completed : 0,
+        total: (prev.active ? prev.total : 0) + imageFiles.length
+      }));
 
       // 1. Create optimistic skeleton entries
       const newSkeletons = imageFiles.map((f, i) => {
@@ -280,10 +298,26 @@ function App() {
       <ErrorBanner error={error} onDismiss={() => setError(null)} />
 
       {progressMsg && !queueIdle && (
-        <div className="card mb-8 animate-fade-in flex flex-col gap-4" style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-color)', padding: '1rem', borderRadius: '16px', marginBottom: '1.5rem' }}>
+        <div className="card mb-8 animate-fade-in flex flex-col gap-4" style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-color)', padding: '1.5rem', borderRadius: '16px', marginBottom: '1.5rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
             <div className="spinner" style={{ width: '20px', height: '20px', borderWidth: '2px', borderTopColor: 'var(--accent-color)' }}></div>
-            <span style={{ fontWeight: 600, color: 'var(--text-color)' }}>{progressMsg}</span>
+            <span style={{ fontWeight: 600, color: 'var(--text-color)' }}>Processing Uploads</span>
+          </div>
+          
+          {uploadStats.active && (
+            <div style={{ width: '100%', marginTop: '0.5rem' }}>
+              <div style={{ width: '100%', height: '6px', backgroundColor: 'var(--glass-border)', borderRadius: '3px', overflow: 'hidden' }}>
+                <div style={{ width: `${Math.min(100, (uploadStats.completed / uploadStats.total) * 100)}%`, height: '100%', backgroundColor: 'var(--primary)', transition: 'width 0.3s ease' }}></div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem' }}>
+                <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>{uploadStats.completed} of {uploadStats.total} photos completed</span>
+                <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>{Math.round((uploadStats.completed / uploadStats.total) * 100)}%</span>
+              </div>
+            </div>
+          )}
+          
+          <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: uploadStats.active ? '0.5rem' : '0' }}>
+            {progressMsg}
           </div>
         </div>
       )}

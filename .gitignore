@@ -24,3 +24,4 @@ test_photos/
 *.njsproj
 *.sln
 *.sw?
+__screenshots__/

@@ -192,6 +192,8 @@ export class VaultQueue {
           console.log(`[VaultQueue] 🚀 Cloud sync complete for ${groupId}`);
         } catch (err) {
           console.error(`[VaultQueue] ❌ Cloud upload failed for container ${groupId}:`, err);
+          this.emit('error', err);
+          throw err;
         }
       } else {
         console.log(`[VaultQueue] ℹ️ Cloud upload skipped for ${groupId} (not connected to Google Drive)`);

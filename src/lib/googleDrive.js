@@ -190,54 +190,71 @@ async function fetchUserInfo(token) {
   throw new Error(`Failed to load Google user profile: ${err}`);
 }
 
+let vaultFolderPromise = null;
+
 /**
- * Finds or creates the "Photo Vault" folder in Google Drive.
+ * Finds or creates the "Photo Vault" folder in Google Drive with mutex locking.
  */
 export async function getOrCreateVaultFolder(token = getAccessToken()) {
   if (vaultFolderId) return vaultFolderId;
   if (!token) throw new Error('Not signed in to Google Drive. Please connect your account.');
 
-  const q = "(name = 'Photo Vault' or name = 'Photo Vault (Compressed)') and mimeType = 'application/vnd.google-apps.folder' and trashed = false";
-  const searchRes = await fetch(`${DRIVE_API_URL}/files?q=${encodeURIComponent(q)}&fields=files(id,name)`, {
-    headers: { Authorization: `Bearer ${token}` }
-  });
-
-  if (!searchRes.ok) {
-    const err = await parseGoogleError(searchRes);
-    throw new Error(`Google Drive search folder failed: ${err}`);
+  if (vaultFolderPromise) {
+    return vaultFolderPromise;
   }
 
-  const searchData = await searchRes.json();
+  vaultFolderPromise = (async () => {
+    try {
+      const q = "(name = 'Photo Vault' or name = 'Photo Vault (Compressed)') and mimeType = 'application/vnd.google-apps.folder' and trashed = false";
+      const searchRes = await fetch(`${DRIVE_API_URL}/files?q=${encodeURIComponent(q)}&fields=files(id,name,createdTime)&orderBy=createdTime desc`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
 
-  if (searchData.files && searchData.files.length > 0) {
-    vaultFolderId = searchData.files[0].id;
-    return vaultFolderId;
-  }
+      if (!searchRes.ok) {
+        const err = await parseGoogleError(searchRes);
+        throw new Error(`Google Drive search folder failed: ${err}`);
+      }
 
-  const createRes = await fetch(`${DRIVE_API_URL}/files`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      name: 'Photo Vault',
-      mimeType: 'application/vnd.google-apps.folder'
-    })
-  });
+      const searchData = await searchRes.json();
 
-  if (!createRes.ok) {
-    const err = await parseGoogleError(createRes);
-    throw new Error(`Google Drive create folder failed: ${err}`);
-  }
+      if (searchData.files && searchData.files.length > 0) {
+        vaultFolderId = searchData.files[0].id;
+        console.log(`[GoogleDrive] 📁 Using existing Photo Vault folder (id: ${vaultFolderId})`);
+        return vaultFolderId;
+      }
 
-  const createData = await createRes.json();
-  vaultFolderId = createData.id;
-  return vaultFolderId;
+      console.log('[GoogleDrive] 📁 Creating new Photo Vault folder in Google Drive...');
+      const createRes = await fetch(`${DRIVE_API_URL}/files`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: 'Photo Vault',
+          mimeType: 'application/vnd.google-apps.folder'
+        })
+      });
+
+      if (!createRes.ok) {
+        const err = await parseGoogleError(createRes);
+        throw new Error(`Google Drive create folder failed: ${err}`);
+      }
+
+      const createData = await createRes.json();
+      vaultFolderId = createData.id;
+      console.log(`[GoogleDrive] 📁 Created Photo Vault folder (id: ${vaultFolderId})`);
+      return vaultFolderId;
+    } finally {
+      vaultFolderPromise = null;
+    }
+  })();
+
+  return vaultFolderPromise;
 }
 
 /**
- * Uploads a compressed container file directly to Google Drive.
+ * Uploads a compressed container file directly to Google Drive using RFC 2387 multipart/related.
  */
 export async function uploadFileToGoogleDrive(filename, data, mimeType = 'video/mp4', token = getAccessToken()) {
   if (!token) throw new Error('Not signed in to Google Drive.');
@@ -251,22 +268,40 @@ export async function uploadFileToGoogleDrive(filename, data, mimeType = 'video/
   };
 
   const blob = data instanceof Blob ? data : new Blob([data], { type: mimeType });
-  const formData = new FormData();
-  formData.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-  formData.append('file', blob);
+
+  const boundary = '-------314159265358979323846';
+  const delimiter = `\r\n--${boundary}\r\n`;
+  const close_delim = `\r\n--${boundary}--`;
+
+  const multipartRequestBody = new Blob([
+    delimiter,
+    'Content-Type: application/json; charset=UTF-8\r\n\r\n',
+    JSON.stringify(metadata),
+    delimiter,
+    `Content-Type: ${mimeType}\r\n\r\n`,
+    blob,
+    close_delim
+  ]);
+
+  console.log(`[GoogleDrive] ☁️ Uploading ${filename} (${(blob.size / 1024 / 1024).toFixed(2)}MB)...`);
 
   const res = await fetch(`${DRIVE_UPLOAD_URL}?uploadType=multipart&fields=id,name,webViewLink`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-    body: formData
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': `multipart/related; boundary=${boundary}`
+    },
+    body: multipartRequestBody
   });
 
   if (!res.ok) {
     const err = await parseGoogleError(res);
+    console.error(`[GoogleDrive] ❌ Upload failed for ${filename}:`, err);
     throw new Error(`Google Drive upload failed for ${filename}: ${err}`);
   }
 
   const result = await res.json();
+  console.log(`[GoogleDrive] ✅ Successfully uploaded ${filename} to Google Drive (id: ${result.id})`);
   return result;
 }
 
@@ -343,6 +378,7 @@ export async function uploadOrUpdateFileInGoogleDrive(filename, data, mimeType =
   const blob = data instanceof Blob ? data : new Blob([data], { type: mimeType });
 
   if (existingFileId) {
+    console.log(`[GoogleDrive] 🔄 Updating ${filename} (id: ${existingFileId})...`);
     // Update existing file via PATCH
     const res = await fetch(`${DRIVE_UPLOAD_URL}/${existingFileId}?uploadType=media`, {
       method: 'PATCH',
@@ -357,9 +393,10 @@ export async function uploadOrUpdateFileInGoogleDrive(filename, data, mimeType =
       const err = await parseGoogleError(res);
       throw new Error(`Google Drive update failed for ${filename}: ${err}`);
     }
-    return await res.json();
+    const result = await res.json();
+    console.log(`[GoogleDrive] ✅ Updated ${filename}`);
+    return result;
   } else {
-    // Create new file via POST
     return await uploadFileToGoogleDrive(filename, data, mimeType, token);
   }
 }

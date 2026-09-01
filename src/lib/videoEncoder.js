@@ -220,9 +220,9 @@ export async function encodeImagesToVideo(images, onProgress) {
 }
 
 /**
- * Extracts a single photo frame from a container in 100% full fidelity PNG.
+ * Extracts a single photo frame from a container in full fidelity matching requested MIME type.
  */
-export async function extractSingleFrame(videoBlobData, targetTimestampSec = 0.5) {
+export async function extractSingleFrame(videoBlobData, targetTimestampSec = 0.5, outputMimeType = 'image/jpeg') {
   return new Promise((resolve, reject) => {
     // Detect MIME type from magic bytes
     let mimeType = 'video/mp4';
@@ -266,8 +266,12 @@ export async function extractSingleFrame(videoBlobData, targetTimestampSec = 0.5
         ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(video, 0, 0, width, height);
 
-        const dataUrl = canvas.toDataURL('image/png');
-        console.log(`[videoEncoder] 🖼️ Extracted frame at ${video.currentTime.toFixed(2)}s (${width}x${height})`);
+        const targetMime = outputMimeType === 'image/png' ? 'image/png' : 'image/jpeg';
+        const dataUrl = targetMime === 'image/png'
+          ? canvas.toDataURL('image/png')
+          : canvas.toDataURL('image/jpeg', 0.98);
+
+        console.log(`[videoEncoder] 🖼️ Extracted frame at ${video.currentTime.toFixed(2)}s (${width}x${height}, format: ${targetMime})`);
         cleanup();
         resolve(dataUrl);
       } catch (err) {

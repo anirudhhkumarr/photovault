@@ -437,19 +437,23 @@ export default function App() {
   const handleDownloadPhoto = async (photo) => {
     if (!photo) return;
     console.log(`[PhotoVault] ⬇️ Downloading photo original: ${photo.filename} (videoId: ${photo.videoId}, frameIndex: ${photo.frameIndex})`);
+
+    const ext = photo.filename?.split('.').pop()?.toLowerCase();
+    const targetMime = ext === 'png' ? 'image/png' : 'image/jpeg';
+
     if (photo.blob) {
-      downloadFileDirectly(photo.filename, photo.blob, photo.mimeType || 'image/jpeg');
+      downloadFileDirectly(photo.filename, photo.blob, targetMime);
       return;
     }
     try {
       const containerBlob = await getOrFetchVideoBlob(photo.videoId);
       if (containerBlob) {
-        const frameUrl = await extractSingleFrame(containerBlob, photo.timestamp || 0.5);
+        const frameUrl = await extractSingleFrame(containerBlob, photo.timestamp || 0.5, targetMime);
         if (frameUrl) {
           const res = await fetch(frameUrl);
           const blob = await res.blob();
-          downloadFileDirectly(photo.filename, blob, photo.mimeType || 'image/jpeg');
-          console.log(`[PhotoVault] ✅ Download complete for ${photo.filename}`);
+          downloadFileDirectly(photo.filename, blob, targetMime);
+          console.log(`[PhotoVault] ✅ Download complete for ${photo.filename} (${targetMime})`);
         }
       }
     } catch (e) {

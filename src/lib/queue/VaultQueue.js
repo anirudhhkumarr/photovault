@@ -126,6 +126,7 @@ export class VaultQueue {
         const frameIndex = startIndex + i;
         await addPhoto({
           filename: item.name,
+          mimeType: item.file.type || (item.name.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg'),
           contentHash: item.contentHash,
           fingerprint: item.fingerprint,
           videoId: groupId,

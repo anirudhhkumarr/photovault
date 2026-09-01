@@ -64,32 +64,34 @@ export default function App() {
     });
   }, []);
 
-  const loadData = async (resetPage = false) => {
+  const loadData = async (resetPage = false, containersOverride = null) => {
     try {
       setIsLoadingData(true);
       const currentPage = resetPage ? 0 : page;
-      console.log(`[PhotoVault] 📚 Loading photo library data (page: ${currentPage}, reset: ${resetPage}, total in view: ${photos.length})`);
+      const activeCloudContainers = containersOverride || cloudContainers;
+      console.log(`[PhotoVault] 📚 Loading photo library data (page: ${currentPage}, reset: ${resetPage}, cloudContainers: ${activeCloudContainers.length})`);
       
-      if (cloudContainers.length > 0) {
+      if (activeCloudContainers && activeCloudContainers.length > 0) {
         // VIRTUALIZED JIT LOADING
         const targetStart = currentPage * PAGE_SIZE;
         const targetEnd = targetStart + PAGE_SIZE;
         
-        const containersToFetch = cloudContainers.filter(c => 
+        const containersToFetch = activeCloudContainers.filter(c => 
           !c.loaded && 
           !(c.endIndex <= targetStart || c.startIndex >= targetEnd)
         );
         
         const token = getAccessToken();
+        let updatedContainers = activeCloudContainers.map(c => ({ ...c }));
         if (containersToFetch.length > 0 && token) {
           console.log(`[PhotoVault] ☁️ JIT loading ${containersToFetch.length} container metadata files from Google Drive for viewport range [${targetStart}-${targetEnd}]`);
-          const newContainers = [...cloudContainers];
           
           for (const c of containersToFetch) {
             setProgress(`Fetching metadata for ${c.groupId}...`);
             let fileIdToFetch = c.fileId;
             if (!fileIdToFetch) {
-               fileIdToFetch = await getFileIdByName(`metadata_${c.groupId}_${c.count}.json`, token);
+               fileIdToFetch = await getFileIdByName(`metadata_${c.groupId}_${c.count}.json`, token) ||
+                               await getFileIdByName(`metadata_${c.groupId}.json`, token);
             }
             if (fileIdToFetch) {
               const dbData = await downloadFileFromGoogleDrive(fileIdToFetch, token);
@@ -99,18 +101,19 @@ export default function App() {
                 console.log(`[PhotoVault] 📥 Loaded container metadata for ${c.groupId} (${c.count} items)`);
                 
                 // Mark loaded
-                const idx = newContainers.findIndex(x => x.groupId === c.groupId);
-                if (idx !== -1) newContainers[idx].loaded = true;
+                const idx = updatedContainers.findIndex(x => x.groupId === c.groupId);
+                if (idx !== -1) updatedContainers[idx].loaded = true;
               }
             }
           }
-          setCloudContainers(newContainers);
+          setCloudContainers(updatedContainers);
           setProgress('');
         }
         
         // Populate the `photos` array accurately based on offsets
         const allDbPhotos = await getPhotos();
-        const newPhotos = resetPage ? new Array(totalPhotosCount).fill(null) : [...photos];
+        const effectiveTotal = updatedContainers.reduce((acc, c) => Math.max(acc, c.endIndex || 0), 0) || allDbPhotos.length;
+        const newPhotos = resetPage ? new Array(effectiveTotal).fill(null) : [...photos];
         
         // Map photos by groupId
         const photosByGroup = {};
@@ -119,16 +122,7 @@ export default function App() {
            photosByGroup[p.videoId].push(p);
         }
         
-        // We iterate over the latest state of cloudContainers (so we use newContainers if defined, otherwise cloudContainers)
-        const activeContainers = containersToFetch.length > 0 ? cloudContainers.map(c => ({ ...c })) : cloudContainers;
-        if (containersToFetch.length > 0) {
-           for (const fetched of containersToFetch) {
-             const idx = activeContainers.findIndex(x => x.groupId === fetched.groupId);
-             if (idx !== -1) activeContainers[idx].loaded = true;
-           }
-        }
-        
-        for (const c of activeContainers) {
+        for (const c of updatedContainers) {
            if (c.loaded && photosByGroup[c.groupId]) {
              // sort by frameIndex so they map 1:1 to their offset
              const groupPhotos = photosByGroup[c.groupId].sort((a,b) => a.frameIndex - b.frameIndex);
@@ -141,8 +135,9 @@ export default function App() {
         }
         
         setPhotos(newPhotos);
-        setHasMore((currentPage * PAGE_SIZE) + PAGE_SIZE < totalPhotosCount);
-        console.log(`[PhotoVault] 🖼️ PhotoGrid populated with ${newPhotos.filter(Boolean).length}/${totalPhotosCount} loaded photos`);
+        setTotalPhotosCount(effectiveTotal);
+        setHasMore((currentPage * PAGE_SIZE) + PAGE_SIZE < effectiveTotal);
+        console.log(`[PhotoVault] 🖼️ PhotoGrid populated with ${newPhotos.filter(Boolean).length}/${effectiveTotal} loaded photos`);
       } else {
         // Fallback for local-only un-synced data
         const count = await getPhotosCount();
@@ -262,15 +257,17 @@ export default function App() {
 
       if (!forceReindex) {
         const metadataFiles = cloudFiles.filter(f => f.name.startsWith('metadata_') && f.name.endsWith('.json'));
+        console.log(`[PhotoVault] ☁️ Found ${metadataFiles.length} metadata files in Google Drive`);
         
         let containers = [];
         
         for (const file of metadataFiles) {
-          const match = file.name.match(/^metadata_(.+?)_(\d+)\.json$/);
+          // Support both metadata_<groupId>_<count>.json and metadata_<groupId>.json
+          const match = file.name.match(/^metadata_(.+?)(?:_(\d+))?\.json$/);
           
           if (match) {
             const groupId = match[1];
-            const count = parseInt(match[2], 10);
+            const count = match[2] ? parseInt(match[2], 10) : 1;
             
             containers.push({
               groupId,
@@ -290,10 +287,14 @@ export default function App() {
           offset += c.count;
         }
         
+        console.log(`[PhotoVault] 📦 Discovered ${containers.length} cloud containers (${offset} total items)`);
         setCloudContainers(containers);
         setTotalPhotosCount(offset);
         setPhotos(new Array(offset).fill(null));
-        setPage(0); // This will naturally trigger loadData via useEffect
+        setPage(0);
+
+        // Immediately trigger JIT loading for page 0 with discovered containers
+        await loadData(true, containers);
       }
 
       let importedCount = 0;
@@ -349,12 +350,12 @@ export default function App() {
       }
 
       if (importedCount > 0) {
-        await loadData();
+        await loadData(true);
       }
       
       setProgress('');
     } catch (e) {
-      console.error('Cloud sync error:', e);
+      console.error('[PhotoVault] ❌ Cloud sync error:', e);
       setErrorMessage(e.message || String(e));
     } finally {
       setIsProcessing(false);

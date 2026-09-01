@@ -4,13 +4,12 @@ import { StorageSummary } from './components/StorageSummary';
 import { PhotoGrid } from './components/PhotoGrid';
 import { PhotoViewerModal } from './components/PhotoViewerModal';
 import { GoogleDriveModal } from './components/GoogleDriveModal';
-import { PipelineManager } from './lib/pipeline/PipelineManager';
+import { VaultQueue } from './lib/queue/VaultQueue';
 import { Cloud, AlertCircle, X } from 'lucide-react';
 
-import { computeContentHash, extractSceneFingerprint, arePhotosInSameScene, generateThumbnail } from './lib/phash';
 import { 
   getPhotos, getPagedPhotos, getPhotosCount, addPhoto, updatePhoto, deletePhotoFromDB, 
-  getVideos, addVideo, updateVideo, deleteVideoFromDB, 
+  getVideos, updateVideo, deleteVideoFromDB, 
   getVideoBlob, clearDB, exportContainerMetadata, importContainerMetadata
 } from './lib/db';
 import { encodeImagesToVideo, extractAllFramesFromVideo, extractSingleFrame } from './lib/videoEncoder';
@@ -118,7 +117,7 @@ export default function App() {
         }
         
         // We iterate over the latest state of cloudContainers (so we use newContainers if defined, otherwise cloudContainers)
-        const activeContainers = containersToFetch.length > 0 ? [...cloudContainers] : cloudContainers;
+        const activeContainers = containersToFetch.length > 0 ? cloudContainers.map(c => ({ ...c })) : cloudContainers;
         if (containersToFetch.length > 0) {
            for (const fetched of containersToFetch) {
              const idx = activeContainers.findIndex(x => x.groupId === fetched.groupId);
@@ -297,7 +296,6 @@ export default function App() {
 
         const groupId = file.name.replace(/\.mp4$/i, '');
         const isMp4 = file.name.endsWith('.mp4');
-        const existingVideo = existingVideos.find(v => v.id === groupId);
 
         // Only download the heavy MP4 container if we are forcefully rebuilding the DB
         // or if it's completely missing from DB metadata.
@@ -591,56 +589,35 @@ export default function App() {
         }
       }
 
-      // 2. Image Clustering and HEVC Container Packing via Producer/Consumer Pipeline
+      // 2. Image Clustering and HEVC Container Packing via Event-Driven Queue
       if (imageFiles.length > 0) {
-        // Build temp UI objects so they show up as uploading immediately
-        const newUploads = imageFiles.map(file => {
-          const tempId = Math.random().toString(36);
-          file._tempId = tempId; // mutate the actual File object so FingerprintStage has it
-          return {
-            id: tempId,
-            filename: file.name,
-            size: file.size,
-            thumbnail: URL.createObjectURL(file),
-            isUploading: true
-          };
+        const vaultQueue = new VaultQueue();
+
+        vaultQueue.on('container:uploaded', ({ itemIds }) => {
+          // Incrementally remove uploaded items from processing skeleton state
+          if (itemIds && itemIds.length > 0) {
+            setUploadingFiles(prev => prev.filter(f => !itemIds.includes(f.id)));
+          }
+          // Incrementally refresh the top of the photo grid
+          loadData(true);
         });
-        setUploadingFiles(prev => [...prev, ...newUploads]);
-        
-        await new Promise((resolve, reject) => {
-          const pipeline = new PipelineManager(
-            (msg) => setProgress(msg),
-            (err) => {
-              if (err) reject(err);
-              else resolve();
-            },
-            (stats) => setProgressStats(stats),
-            (itemIds) => {
-              // Remove these items from uploading state since they finished
-              if (itemIds && itemIds.length > 0) {
-                setUploadingFiles(prev => prev.filter(f => !itemIds.includes(f.id)));
-              }
-              // A container completed, so reset and fetch the top of the DB
-              loadData(true); 
-            }
-          );
-          
-          pipeline.setTotalItems(imageFiles.length);
-          pipeline.start();
-          
-          // Producer: Feed files into the pipeline asynchronously
-          (async () => {
-            try {
-              for (const file of imageFiles) {
-                await pipeline.enqueueFile(file);
-              }
-              pipeline.finishIngestion();
-            } catch (err) {
-              console.error("Producer failed:", err);
-              reject(err);
-            }
-          })();
+
+        vaultQueue.on('progress', ({ name, stats }) => {
+          if (name) setProgress(name);
+          if (stats) setProgressStats(stats);
         });
+
+        vaultQueue.on('error', (err) => {
+          console.error('VaultQueue error:', err);
+          setErrorMessage(err.message || String(err));
+        });
+
+        // Enqueue files into event-driven task queue and display immediate uploading skeletons
+        const descriptors = await vaultQueue.enqueueFiles(imageFiles);
+        setUploadingFiles(prev => [...prev, ...descriptors]);
+
+        // Await completion of all reactive tasks (analysis, encoding, and uploads)
+        await vaultQueue.waitUntilComplete();
       }
 
       await loadData(true); // Final catch-all refresh
@@ -704,9 +681,24 @@ export default function App() {
         {/* Progress Card */}
         {isProcessing && (
           <div className="card mb-8 animate-fade-in flex flex-col gap-4" style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-color)' }}>
-            <div className="flex items-center gap-3">
-              <div className="spinner" style={{ width: '20px', height: '20px', borderWidth: '2px', borderTopColor: 'var(--accent-color)' }}></div>
-              <span style={{ fontWeight: 600, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>Processing Uploads</span>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="spinner" style={{ width: '20px', height: '20px', borderWidth: '2px', borderTopColor: 'var(--accent-color)' }}></div>
+                <span style={{ fontWeight: 600, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>Processing Uploads</span>
+              </div>
+              {progressStats && (
+                <div className="flex items-center gap-3" style={{ fontSize: '12px' }}>
+                  <span className="badge" style={{ padding: '4px 8px', borderRadius: '12px', background: 'rgba(0,122,255,0.1)', color: 'var(--accent-color)', fontWeight: 600 }}>
+                    🔍 Analyzing: {progressStats.analyzing?.active || 0} active ({progressStats.analyzing?.queued || 0} queued)
+                  </span>
+                  <span className="badge" style={{ padding: '4px 8px', borderRadius: '12px', background: 'rgba(255,149,0,0.1)', color: '#FF9500', fontWeight: 600 }}>
+                    ⚡ Encoding: {progressStats.encoding?.active || 0} active ({progressStats.encoding?.queued || 0} queued)
+                  </span>
+                  <span className="badge" style={{ padding: '4px 8px', borderRadius: '12px', background: 'rgba(52,199,89,0.1)', color: 'var(--success-color)', fontWeight: 600 }}>
+                    ☁️ Uploading: {progressStats.uploading?.active || 0} active ({progressStats.uploading?.queued || 0} queued)
+                  </span>
+                </div>
+              )}
             </div>
             
             {progressStats ? (
@@ -715,10 +707,10 @@ export default function App() {
                   <div style={{ width: `${progressStats.percent}%`, height: '100%', backgroundColor: 'var(--accent-color)', transition: 'width 0.3s ease' }}></div>
                 </div>
                 <div className="flex justify-between items-center mt-2">
-                  <span className="text-subtitle" style={{ fontSize: '13px' }}>{progressStats.completed} of {progressStats.total} items</span>
-                  <span className="text-subtitle" style={{ fontSize: '13px' }}>{progressStats.etaSeconds > 60 ? Math.round(progressStats.etaSeconds / 60) + ' min remaining' : progressStats.etaSeconds + ' sec remaining'}</span>
+                  <span className="text-subtitle" style={{ fontSize: '13px' }}>{progressStats.completed} of {progressStats.total} items completed</span>
+                  <span className="text-subtitle" style={{ fontSize: '13px' }}>{progressStats.percent}%</span>
                 </div>
-                <div className="text-subtitle mt-3" style={{ fontSize: '13px', textAlign: 'center', opacity: 0.8 }}>{progress}</div>
+                <div className="text-subtitle mt-2" style={{ fontSize: '13px', textAlign: 'center', opacity: 0.85 }}>{progress}</div>
               </div>
             ) : (
               <span className="text-subtitle" style={{ fontSize: '14px' }}>{progress}</span>

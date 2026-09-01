@@ -132,7 +132,7 @@ export async function clearDB() {
       }
     }
     keysToRemove.forEach(k => localStorage.removeItem(k));
-  } catch (e) {
+  } catch {
     // Ignore
   }
 }
@@ -144,7 +144,7 @@ export async function exportContainerMetadata(videoId) {
   
   const videos = [];
   if (rawVideo) {
-    const { blob, ...rest } = rawVideo;
+    const { blob: _blob, ...rest } = rawVideo;
     videos.push(rest);
   }
 

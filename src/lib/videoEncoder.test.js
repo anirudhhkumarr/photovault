@@ -105,7 +105,6 @@ describe('videoEncoder MP4 Roundtrip', () => {
     ctx.fillRect(0, 0, 128, 128);
     
     const dataUrl = canvas.toDataURL('image/png');
-    const originalImg = await loadImageElement(dataUrl);
     const originalData = ctx.getImageData(0, 0, 128, 128);
 
     // Encode

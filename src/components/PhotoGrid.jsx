@@ -102,8 +102,9 @@ export function PhotoGrid({ photos, onInspect, onDownload, onDelete, isLoadingDa
               </>
             )}
           </div>
-        );
-      })}
+        </div>
+      );
+    })}
       
       {isLoadingData && !photos.length && Array.from({ length: 10 }).map((_, i) => (
         <div key={`initial-skeleton-${i}`} className="photo-item skeleton-box" style={{ background: 'var(--bg-secondary)', animation: 'pulse 1.5s infinite ease-in-out' }}>

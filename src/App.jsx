@@ -11,13 +11,19 @@ import { getAllPhotos, getFileHash, addPhoto, exportContainerMetadata } from './
 import { encodeContainer, extractFrame } from './lib/videoEncoder';
 import { analyzeVisualFeatures, isSameScene } from './lib/phash';
 
-const { vaultQueue, forceFlushCluster } = createVaultPipeline({
-  encoder: { encodeContainer },
-  drive: { uploadContainer },
+const defaultServices = {
+  encoder: { encodeContainer, extractFrame },
+  drive: { uploadContainer, syncFromDrive, downloadContainer },
   db: { getFileHash, addPhoto, exportContainerMetadata },
   phash: { analyzeVisualFeatures, isSameScene },
   image: { createImageBitmap: (f) => window.createImageBitmap(f) }
-});
+};
+
+const services = window.__E2E_MOCKS__ 
+  ? { ...defaultServices, ...window.__E2E_MOCKS__ } 
+  : defaultServices;
+
+const { vaultQueue, forceFlushCluster } = createVaultPipeline(services);
 
 function App() {
   const [error, setError] = useState(null);

@@ -2,6 +2,7 @@ import { AlertTriangle, X } from 'lucide-react';
 
 export default function ErrorBanner({ error, onDismiss }) {
   if (!error) return null;
+  console.error('UI Error Banner shown:', error);
 
   return (
     <div className="error-banner glass">

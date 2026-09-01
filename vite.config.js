@@ -6,8 +6,10 @@ export default defineConfig({
   base: './',
   plugins: [react()],
   test: {
+    globals: true,
     environment: 'jsdom',
     setupFiles: ['./src/tests/testHelpers.js'],
+    exclude: ['node_modules', 'e2e'],
     browser: {
       enabled: true,
       name: 'chromium',

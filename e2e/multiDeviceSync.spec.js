@@ -17,7 +17,12 @@ test.describe('Multi-device Sync Flow', () => {
           analyzeVisualFeatures: async (f) => ({
             dHash: '1010', hsvHist: [], spatialBlocks: [], thumbnailDataUrl: 'data:image/jpeg;base64,mock'
           }),
-          isSameScene: () => true
+          isSameScene: (feat1, feat2) => {
+            if (!feat1 || !feat2 || !feat1.dHash || !feat2.dHash) {
+              throw new Error("E2E Mock: isSameScene received invalid arguments");
+            }
+            return true;
+          }
         },
         image: {
           createImageBitmap: async (f) => ({ width: 100, height: 100, close: () => {} })

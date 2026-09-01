@@ -63,7 +63,6 @@ export function createVaultPipeline(services) {
         height: photo.height,
         thumbnailDataUrl: photo.thumbnailDataUrl,
         hash: photo.id,
-        fingerprint: photo.fingerprint,
         videoId: containerId,
         frameIndex: i,
         timestamp: i + 0.5,
@@ -154,7 +153,7 @@ export function createVaultPipeline(services) {
       
       if (clusterBuffer.length > 0) {
         const prev = clusterBuffer[clusterBuffer.length - 1];
-        if (!services.phash.isSameScene(prev.fingerprint, photoData.fingerprint)) {
+        if (!services.phash.isSameScene(prev, photoData)) {
           forceFlushCluster();
         }
       }

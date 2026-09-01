@@ -67,6 +67,18 @@ export async function downloadFile(fileId, responseType = 'json') {
   return await resp.json();
 }
 
+export async function deleteFile(fileId) {
+  const resp = await fetch(`${DRIVE_API_URL}/${fileId}`, {
+    method: 'DELETE',
+    headers: getHeaders()
+  });
+  
+  if (!resp.ok) {
+    const errorMsg = await resp.text();
+    throw new Error(`Failed to delete file: ${resp.status} ${errorMsg}`);
+  }
+}
+
 /**
  * Perform a multipart upload to Google Drive
  * @param {Object} metadata The JSON metadata for the file (name, parents, etc)
@@ -101,6 +113,46 @@ export async function uploadMultipart(metadata, mediaBlob) {
   if (!resp.ok) {
     const errorMsg = await resp.text();
     throw new Error(`Multipart upload failed: ${resp.status} ${errorMsg}`);
+  }
+  
+  return await resp.json();
+}
+
+/**
+ * Perform a multipart update to an existing Google Drive file
+ * @param {string} fileId The Drive file ID to update
+ * @param {Object} metadata The JSON metadata for the file (name, etc)
+ * @param {Blob} mediaBlob The binary content
+ * @returns {Promise<Object>} The updated file's metadata
+ */
+export async function updateMultipart(fileId, metadata, mediaBlob) {
+  const boundary = '-------314159265358979323846';
+  const delimiter = `\r\n--${boundary}\r\n`;
+  const closeDelim = `\r\n--${boundary}--`;
+
+  const metaPart = `Content-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}`;
+  const mediaPart = `Content-Type: ${mediaBlob.type}\r\n\r\n`;
+
+  const blobParts = [
+    new Blob([delimiter + metaPart + delimiter + mediaPart]),
+    mediaBlob,
+    new Blob([closeDelim])
+  ];
+  
+  const multipartBlob = new Blob(blobParts, { type: `multipart/related; boundary=${boundary}` });
+
+  const resp = await fetch(`${DRIVE_UPLOAD_URL}/${fileId}?uploadType=multipart`, {
+    method: 'PATCH',
+    headers: getHeaders({
+      'Content-Type': `multipart/related; boundary=${boundary}`,
+      'Content-Length': multipartBlob.size.toString()
+    }),
+    body: multipartBlob
+  });
+
+  if (!resp.ok) {
+    const errorMsg = await resp.text();
+    throw new Error(`Multipart update failed: ${resp.status} ${errorMsg}`);
   }
   
   return await resp.json();

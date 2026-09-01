@@ -39,28 +39,37 @@ function App() {
   // Load photos from DB on mount
   const loadData = async () => {
     try {
-      const storedPhotos = await getAllPhotos();
+      const storedPhotos = await services.db.getAllPhotos();
       if (storedPhotos && storedPhotos.length > 0) {
         // Sort by newest first
         storedPhotos.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
         setPhotos(storedPhotos);
         
-        const allVideos = await services.db.getAllVideos();
-      const savedBytes = allVideos.reduce((acc, v) => acc + (v.blob?.size || 0), 0);
-      setTotalSavedBytes(savedBytes);
+        const allVideos = await services.db.initDB().then(db => db.getAll('videos'));
+        
+        // Calculate storage savings based on loaded photos vs an 85% compression assumption
+        const loadedPhotos = storedPhotos.filter(p => !p.isSkeleton && p.originalSize);
+        const originalBytes = loadedPhotos.reduce((acc, p) => acc + p.originalSize, 0);
+        setTotalSavedBytes(originalBytes * 0.85);
 
-      // Auto-retry stranded uploads
-      if (allVideos.length > 0) {
-        for (const video of allVideos) {
-          vaultQueue.enqueue('UPLOAD_CONTAINER', {
-            containerId: video.id,
-            blob: video.blob,
-            manifest: video.manifest,
-            photos: video.photos,
-            originalTotalBytes: video.originalTotalBytes
-          });
+        // Auto-retry stranded uploads
+        if (allVideos.length > 0) {
+          const activeTasks = Array.from(vaultQueue.tasks.values())
+            .filter(t => t.type === 'UPLOAD_CONTAINER' && (t.status === 'PENDING' || t.status === 'RUNNING'));
+          const activeContainerIds = new Set(activeTasks.map(t => t.payload.containerId));
+
+          for (const video of allVideos) {
+            if (!activeContainerIds.has(video.id)) {
+              vaultQueue.enqueue('UPLOAD_CONTAINER', {
+                containerId: video.id,
+                blob: video.blob,
+                manifest: video.manifest,
+                photos: video.photos,
+                originalTotalBytes: video.originalTotalBytes
+              });
+            }
+          }
         }
-      }
       } else {
         setPhotos([]);
       }
@@ -142,20 +151,7 @@ function App() {
     };
   }, []);
 
-  useEffect(() => {
-    let syncInterval;
-    if (profile && queueIdle) {
-      // Background Polling
-      syncInterval = setInterval(() => {
-        setIsSyncing(true);
-        services.drive.syncFromDrive(services.db.addPhoto, services.db.deletePhoto)
-          .then(async () => await loadData())
-          .catch(console.error)
-          .finally(() => setIsSyncing(false));
-      }, window.__E2E_SYNC_INTERVAL__ || 30000);
-    }
-    return () => clearInterval(syncInterval);
-  }, [profile, queueIdle]);
+  // Background polling removed in favor of manual sync
 
   const handleConnect = async () => {
     try {
@@ -164,7 +160,11 @@ function App() {
       setProfile(getProfile());
       
       setIsSyncing(true);
-      await services.drive.syncFromDrive(services.db.addPhoto, services.db.deletePhoto);
+      const count = await services.drive.syncFromDrive(
+        services.db.addPhoto,
+        services.db.deletePhoto,
+        services.db.getAllPhotos
+      );
       await loadData();
       setIsSyncing(false);
     } catch (err) {
@@ -275,13 +275,49 @@ function App() {
       await services.db.deletePhoto(photo.id);
       setSelectedPhoto(null);
       
-      // 2. Sync tombstone to Drive
-      if (profile) {
-        await services.drive.deleteContainerItem(photo.hash || photo.id);
-      }
+      // 2. Sync deletion to Drive (rewrites metadata)
+      console.log('App.jsx: calling deleteContainerItem for photo', photo.id);
+      await services.drive.deleteContainerItem(photo);
+      console.log('App.jsx: deleteContainerItem completed successfully');
     } catch (err) {
+      console.error('App.jsx: handleDelete error', err);
       setError(err);
       await loadData(); // rollback UI on failure
+    }
+  };
+
+  const handleManualSync = async () => {
+    if (!profile || !navigator.onLine || !queueIdle) return;
+    setIsSyncing(true);
+    try {
+      // Discard local cache completely and rebuild from metadata files as requested
+      await services.db.clearDB();
+      setPhotos([]); // Clear UI immediately
+      
+      const count = await services.drive.syncFromDrive(
+        services.db.addPhoto, 
+        services.db.deletePhoto, 
+        services.db.getAllPhotos
+      );
+      await loadData();
+    } catch (err) {
+      console.error('Manual sync failed:', err);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleLazyLoadVault = async (photo) => {
+    if (!photo.metaFileId || !photo.videoId) return;
+    try {
+      const photos = await services.drive.fetchVaultMetadata(photo.metaFileId);
+      await services.db.deleteVaultSkeletons(photo.videoId);
+      for (const p of photos) {
+        await services.db.addPhoto({ ...p, syncStatus: 'synced' });
+      }
+      await loadData();
+    } catch (err) {
+      console.error('Failed to lazy load vault:', err);
     }
   };
 
@@ -291,6 +327,7 @@ function App() {
         profile={profile} 
         onConnect={handleConnect} 
         onDisconnect={handleDisconnect}
+        onSync={handleManualSync}
         queueIdle={queueIdle} 
         totalSavedBytes={totalSavedBytes} 
       />
@@ -326,6 +363,7 @@ function App() {
         photos={photos}  
         onFilesAdded={handleFilesAdded} 
         onPhotoClick={setSelectedPhoto} 
+        onLazyLoad={handleLazyLoadVault}
       />
       
       {selectedPhoto && (

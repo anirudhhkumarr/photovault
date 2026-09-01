@@ -57,6 +57,20 @@ export async function deletePhoto(id) {
   return db.delete('photos', id);
 }
 
+export async function deleteVaultSkeletons(vaultId) {
+  const db = await initDB();
+  const tx = db.transaction('photos', 'readwrite');
+  const index = tx.store.index('videoId');
+  let cursor = await index.openCursor(IDBKeyRange.only(vaultId));
+  while (cursor) {
+    if (cursor.value.isSkeleton) {
+      await cursor.delete();
+    }
+    cursor = await cursor.continue();
+  }
+  await tx.done;
+}
+
 export async function clearDB() {
   const db = await initDB();
   await db.clear('photos');

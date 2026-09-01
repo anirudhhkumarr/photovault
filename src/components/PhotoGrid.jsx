@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import PhotoCard from './PhotoCard';
 import { Upload } from 'lucide-react';
 
-export default function PhotoGrid({ photos, onFilesAdded, onPhotoClick }) {
+export default function PhotoGrid({ photos, onFilesAdded, onPhotoClick, onLazyLoad }) {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef(null);
 
@@ -63,7 +63,7 @@ export default function PhotoGrid({ photos, onFilesAdded, onPhotoClick }) {
       ) : (
         <div className="photo-grid">
           {photos.map((photo, idx) => (
-            <PhotoCard key={photo.id || `temp-${idx}`} photo={photo} onClick={onPhotoClick} />
+            <PhotoCard key={photo.id || `temp-${idx}`} photo={photo} onClick={onPhotoClick} onLazyLoad={onLazyLoad} />
           ))}
         </div>
       )}

@@ -1,6 +1,6 @@
-import { Cloud, CheckCircle, Loader, LogOut } from 'lucide-react';
+import { Cloud, CheckCircle, Loader, LogOut, RefreshCw } from 'lucide-react';
 
-export default function Header({ profile, onConnect, onDisconnect, queueIdle, totalSavedBytes }) {
+export default function Header({ profile, onConnect, onDisconnect, onSync, queueIdle, totalSavedBytes }) {
   const savedMb = (totalSavedBytes / (1024 * 1024)).toFixed(2);
   
   return (
@@ -23,6 +23,9 @@ export default function Header({ profile, onConnect, onDisconnect, queueIdle, to
         
         {profile ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <button className="btn icon-btn" onClick={onSync} disabled={!queueIdle} style={{ padding: '0.5rem' }} title="Sync with Drive">
+              <RefreshCw size={16} />
+            </button>
             <img 
               src={profile.picture} 
               alt="Profile" 

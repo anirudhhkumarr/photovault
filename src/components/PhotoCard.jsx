@@ -1,16 +1,23 @@
 import { useState, useEffect, useRef } from 'react';
 import { Maximize2 } from 'lucide-react';
 
-export default function PhotoCard({ photo, onClick }) {
+export default function PhotoCard({ photo, onClick, onLazyLoad }) {
   const [isVisible, setIsVisible] = useState(false);
   const cardRef = useRef(null);
+  const lazyLoadTriggered = useRef(false);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
           setIsVisible(true);
-          observer.disconnect();
+          if (photo.isSkeleton && onLazyLoad && !lazyLoadTriggered.current) {
+            lazyLoadTriggered.current = true;
+            onLazyLoad(photo);
+          }
+          if (!photo.isSkeleton) {
+            observer.disconnect();
+          }
         }
       },
       { rootMargin: '200px' }
@@ -21,10 +28,16 @@ export default function PhotoCard({ photo, onClick }) {
     }
 
     return () => observer.disconnect();
-  }, []);
+  }, [photo, onLazyLoad]);
 
   if (photo.isSkeleton) {
-    return <div className="photo-card skeleton"></div>;
+    return (
+      <div className="photo-card skeleton" ref={cardRef}>
+        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', opacity: 0.5 }}>
+          <div className="spinner" style={{ width: '24px', height: '24px', borderWidth: '2px', borderTopColor: 'var(--text-muted)' }}></div>
+        </div>
+      </div>
+    );
   }
 
   return (

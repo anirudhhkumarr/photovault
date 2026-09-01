@@ -44,7 +44,7 @@ export function createVaultPipeline(services) {
 
   router.use('ENCODE_CONTAINER', async (task, context) => {
     const cluster = task.payload;
-    const containerId = `vault_${cluster[0].id.slice(0,8)}_${Date.now()}`;
+    const containerId = `vault_${Date.now()}_${cluster.length}_${cluster[0].id.slice(0,8)}`;
     
     context.queue.dispatchEvent(new CustomEvent('vault:progress', { detail: { message: `Encoding cluster of ${cluster.length} photos...` } }));
     
@@ -148,15 +148,8 @@ export function createVaultPipeline(services) {
     const task = e.detail;
     
     if (task.type === 'ANALYZE_PHOTO') {
-      const photoData = task.result;
+      const photoData = { ...task.result, syncStatus: 'pending' };
       const bufferSize = clusterBuffer.reduce((sum, p) => sum + p.originalSize, 0);
-      
-      if (clusterBuffer.length > 0) {
-        const prev = clusterBuffer[clusterBuffer.length - 1];
-        if (!services.phash.isSameScene(prev, photoData)) {
-          forceFlushCluster();
-        }
-      }
       
       clusterBuffer.push(photoData);
       const newSize = bufferSize + photoData.originalSize;

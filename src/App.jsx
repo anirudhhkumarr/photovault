@@ -5,7 +5,7 @@ import InspectorModal from './components/InspectorModal';
 import ErrorBanner from './components/ErrorBanner';
 
 import { createVaultPipeline } from './lib/VaultQueue';
-import { connectDrive, getProfile } from './lib/auth';
+import { connectDrive, getProfile, initAuth } from './lib/auth';
 import { uploadContainer, syncFromDrive, downloadContainer } from './lib/driveSync';
 import { getAllPhotos, getFileHash, addPhoto, exportContainerMetadata } from './lib/db';
 import { encodeContainer, extractFrame } from './lib/videoEncoder';
@@ -56,6 +56,9 @@ function App() {
 
   useEffect(() => {
     loadData();
+    if (initAuth()) {
+      setProfile(getProfile());
+    }
   }, []);
 
   // Hook up VaultQueue listeners to UI state

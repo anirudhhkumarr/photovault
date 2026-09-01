@@ -35,6 +35,25 @@ export async function loadGis() {
   });
 }
 
+export function initAuth() {
+  const stored = sessionStorage.getItem('photovault_auth');
+  if (stored) {
+    try {
+      const data = JSON.parse(stored);
+      if (data.expiresAt > Date.now()) {
+        accessToken = data.accessToken;
+        googleProfile = data.profile;
+        return true;
+      } else {
+        sessionStorage.removeItem('photovault_auth');
+      }
+    } catch (e) {
+      console.error('Failed to parse auth data', e);
+    }
+  }
+  return false;
+}
+
 export async function connectDrive() {
   await loadGis();
   
@@ -54,6 +73,15 @@ export async function connectDrive() {
         if (!profileResp.ok) throw new Error("Failed to fetch profile");
         
         googleProfile = await profileResp.json();
+        
+        const expiresIn = resp.expires_in || 3600;
+        const expiresAt = Date.now() + (expiresIn * 1000);
+        sessionStorage.setItem('photovault_auth', JSON.stringify({
+          accessToken,
+          profile: googleProfile,
+          expiresAt
+        }));
+        
         resolve({ token: accessToken, profile: googleProfile });
       } catch (err) {
         console.error("Failed to fetch user profile", err);

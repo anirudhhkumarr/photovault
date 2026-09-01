@@ -201,38 +201,53 @@ test.describe('Multi-device Sync Flow', () => {
     await setupMockGoogleAPI(pageA);
 
     await pageA.goto('/');
-    
-    // Connect Drive on Device A
+
+    // 1. Device A: Connect and Upload
     await pageA.click('button:has-text("Connect Drive")');
     await expect(pageA.locator('text=Test User')).toBeVisible();
-
+    
     // Upload a photo
     const [fileChooser] = await Promise.all([
       pageA.waitForEvent('filechooser'),
       pageA.click('button:has-text("Select Files")')
     ]);
     
-    await fileChooser.setFiles('test-photo.jpg');
+    await fileChooser.setFiles('e2e/fixtures/test-photo.jpg');
     
     // Wait for upload to complete and card to appear
     await expect(pageA.locator('.photo-card')).toHaveCount(1, { timeout: 15000 });
-    
-    // Wait for the sync queue to process
-    await pageA.waitForTimeout(1000);
 
-    // Setup Device B
+    // 2. Device B: Connect and Sync
     const contextB = await browser.newContext();
     const pageB = await contextB.newPage();
     pageB.on('console', msg => console.log('Device B:', msg.text()));
+    pageB.on('pageerror', err => console.log('Device B Uncaught Error:', err.message));
     await setupMockGoogleAPI(pageB);
 
     await pageB.goto('/');
     
-    // Connect Drive on Device B
     await pageB.click('button:has-text("Connect Drive")');
     await expect(pageB.locator('text=Test User')).toBeVisible();
 
     // It should sync and display the same photo
     await expect(pageB.locator('.photo-card')).toHaveCount(1, { timeout: 10000 });
+  });
+
+  test('Session persists across page reloads', async ({ browser }) => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await setupMockGoogleAPI(page);
+
+    await page.goto('/');
+
+    // Connect
+    await page.click('button:has-text("Connect Drive")');
+    await expect(page.locator('text=Test User')).toBeVisible();
+
+    // Reload the page
+    await page.reload();
+
+    // Verify user is still logged in without clicking connect
+    await expect(page.locator('text=Test User')).toBeVisible({ timeout: 5000 });
   });
 });

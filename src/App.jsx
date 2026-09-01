@@ -68,6 +68,7 @@ export default function App() {
     try {
       setIsLoadingData(true);
       const currentPage = resetPage ? 0 : page;
+      console.log(`[PhotoVault] 📚 Loading photo library data (page: ${currentPage}, reset: ${resetPage}, total in view: ${photos.length})`);
       
       if (cloudContainers.length > 0) {
         // VIRTUALIZED JIT LOADING
@@ -81,6 +82,7 @@ export default function App() {
         
         const token = getAccessToken();
         if (containersToFetch.length > 0 && token) {
+          console.log(`[PhotoVault] ☁️ JIT loading ${containersToFetch.length} container metadata files from Google Drive for viewport range [${targetStart}-${targetEnd}]`);
           const newContainers = [...cloudContainers];
           
           for (const c of containersToFetch) {
@@ -94,6 +96,7 @@ export default function App() {
               if (dbData) {
                 const text = new TextDecoder().decode(dbData);
                 await importContainerMetadata(text);
+                console.log(`[PhotoVault] 📥 Loaded container metadata for ${c.groupId} (${c.count} items)`);
                 
                 // Mark loaded
                 const idx = newContainers.findIndex(x => x.groupId === c.groupId);
@@ -139,6 +142,7 @@ export default function App() {
         
         setPhotos(newPhotos);
         setHasMore((currentPage * PAGE_SIZE) + PAGE_SIZE < totalPhotosCount);
+        console.log(`[PhotoVault] 🖼️ PhotoGrid populated with ${newPhotos.filter(Boolean).length}/${totalPhotosCount} loaded photos`);
       } else {
         // Fallback for local-only un-synced data
         const count = await getPhotosCount();
@@ -156,6 +160,7 @@ export default function App() {
             return [...prev, ...newItems];
           });
         }
+        console.log(`[PhotoVault] 🖼️ Loaded ${p.length} photos from local IndexedDB (total: ${count})`);
       }
 
       const g = await getVideos();
@@ -169,8 +174,9 @@ export default function App() {
         }
       }
       setGroups(activeGroups);
+      console.log(`[PhotoVault] 📦 Active video containers: ${activeGroups.length}`);
     } catch (e) {
-      console.error('loadData error:', e);
+      console.error('[PhotoVault] ❌ loadData error:', e);
     } finally {
       setIsLoadingData(false);
     }
@@ -426,6 +432,7 @@ export default function App() {
 
   const handleDownloadPhoto = async (photo) => {
     if (!photo) return;
+    console.log(`[PhotoVault] ⬇️ Downloading photo original: ${photo.filename} (videoId: ${photo.videoId}, frameIndex: ${photo.frameIndex})`);
     if (photo.blob) {
       downloadFileDirectly(photo.filename, photo.blob, photo.mimeType || 'image/jpeg');
       return;
@@ -438,14 +445,16 @@ export default function App() {
           const res = await fetch(frameUrl);
           const blob = await res.blob();
           downloadFileDirectly(photo.filename, blob, photo.mimeType || 'image/jpeg');
+          console.log(`[PhotoVault] ✅ Download complete for ${photo.filename}`);
         }
       }
     } catch (e) {
-      console.error('Download error:', e);
+      console.error('[PhotoVault] ❌ Download error:', e);
     }
   };
 
   const handleInspectPhoto = async (photo) => {
+    console.log(`[PhotoVault] 🔍 Inspecting photo: ${photo.filename} (videoId: ${photo.videoId}, timestamp: ${photo.timestamp}s)`);
     setSelectedPhoto(photo);
     setFullPhotoUrl(photo.thumbnail || '');
     try {
@@ -454,14 +463,16 @@ export default function App() {
         const frameUrl = await extractSingleFrame(containerBlob, photo.timestamp || 0.5);
         if (frameUrl) {
           setFullPhotoUrl(frameUrl);
+          console.log(`[PhotoVault] 🖼️ High-res frame loaded for inspection: ${photo.filename}`);
         }
       }
     } catch (e) {
-      console.error('Photo inspection error:', e);
+      console.error('[PhotoVault] ❌ Photo inspection error:', e);
     }
   };
 
   const handleDeletePhoto = async (photoId) => {
+    console.log(`[PhotoVault] 🗑️ Deleting photo: ${photoId}`);
     try {
       setIsProcessing(true);
       setProgress('Updating photo storage...');

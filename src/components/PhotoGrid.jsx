@@ -46,10 +46,10 @@ export default function PhotoGrid({ photos, onFilesAdded, onPhotoClick }) {
       onDrop={handleDrop}
     >
       {photos.length === 0 ? (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', opacity: 0.7 }}>
-          <Upload size={48} style={{ marginBottom: '1rem' }} />
+        <div className="dropzone-empty">
+          <Upload size={56} style={{ marginBottom: '1.5rem', color: 'var(--primary)' }} strokeWidth={1.5} />
           <h3>Drag & Drop Photos Here</h3>
-          <p style={{ marginTop: '0.5rem', marginBottom: '1.5rem', fontSize: '0.875rem' }}>or click below to browse</p>
+          <p>or click below to browse your library</p>
           <button className="btn" onClick={() => fileInputRef.current?.click()}>Select Files</button>
           <input 
             type="file" 

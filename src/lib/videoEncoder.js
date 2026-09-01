@@ -115,6 +115,7 @@ export async function encodeImagesToVideo(images, onProgress) {
   ctx.imageSmoothingQuality = 'high';
 
   const { config: encoderConfig, muxerType, codecFamily } = await getSupportedEncoderConfig(width, height);
+  console.log(`[videoEncoder] 🚀 Initializing encoder for ${images.length} frames (${width}x${height}, codec: ${encoderConfig.codec}, muxer: ${muxerType})`);
 
   let muxer;
   let target;
@@ -148,7 +149,7 @@ export async function encodeImagesToVideo(images, onProgress) {
       muxer.addVideoChunk(chunk, meta);
     },
     error: (e) => {
-      console.error('VideoEncoder error:', e);
+      console.error('[videoEncoder] ❌ VideoEncoder error:', e);
       encodeError = e;
     }
   });
@@ -227,6 +228,8 @@ export async function encodeImagesToVideo(images, onProgress) {
   muxer.finalize();
 
   const buffer = target.buffer;
+  console.log(`[videoEncoder] 🏁 Finalized video container: ${images.length} frames (${(buffer.byteLength / 1024 / 1024).toFixed(2)}MB, ${muxerType})`);
+
   return {
     blob: new Uint8Array(buffer),
     width,
@@ -257,6 +260,7 @@ export async function extractSingleFrame(videoBlobData, targetTimestampSec = 0.5
     };
 
     const timer = setTimeout(() => {
+      console.warn(`[videoEncoder] ⚠️ Single frame extraction timed out for timestamp ${targetTimestampSec}s`);
       cleanup();
       resolve('');
     }, 8000);
@@ -277,12 +281,14 @@ export async function extractSingleFrame(videoBlobData, targetTimestampSec = 0.5
         canvas.toBlob((blob) => {
           cleanup();
           if (blob) {
+            console.log(`[videoEncoder] 🖼️ Extracted frame at ${video.currentTime.toFixed(2)}s (${width}x${height}, ${(blob.size / 1024).toFixed(1)} KB)`);
             resolve(URL.createObjectURL(blob));
           } else {
             resolve(canvas.toDataURL('image/png'));
           }
         }, 'image/png');
-      } catch {
+      } catch (err) {
+        console.error('[videoEncoder] ❌ Error extracting single frame:', err);
         cleanup();
         resolve('');
       }
@@ -302,7 +308,8 @@ export async function extractSingleFrame(videoBlobData, targetTimestampSec = 0.5
       }
     };
 
-    video.onerror = () => {
+    video.onerror = (e) => {
+      console.error('[videoEncoder] ❌ Video error during single frame extraction:', e);
       clearTimeout(timer);
       cleanup();
       resolve('');
@@ -337,12 +344,14 @@ export async function extractAllFramesFromVideo(videoBlobData, maxExpectedFrames
     };
 
     const timer = setTimeout(() => {
+      console.warn(`[videoEncoder] ⚠️ Bulk frame extraction timed out after extracting ${frames.length}/${maxExpectedFrames} frames`);
       cleanup();
       resolve(frames);
     }, 20000);
 
     video.onloadedmetadata = () => {
       const duration = Math.max(0.1, video.duration || maxExpectedFrames);
+      console.log(`[videoEncoder] 🎞️ Extracting ${maxExpectedFrames} frames from container (duration: ${duration.toFixed(2)}s)`);
 
       const captureCurrentFrame = () => {
         try {
@@ -364,13 +373,15 @@ export async function extractAllFramesFromVideo(videoBlobData, maxExpectedFrames
 
           currentIndex++;
           if (currentIndex >= maxExpectedFrames) {
+            console.log(`[videoEncoder] ✅ Successfully extracted all ${frames.length} frames from container`);
             clearTimeout(timer);
             cleanup();
             return resolve(frames);
           }
 
           seekNext();
-        } catch {
+        } catch (err) {
+          console.error('[videoEncoder] ❌ Error during bulk frame capture:', err);
           clearTimeout(timer);
           cleanup();
           resolve(frames);
@@ -402,7 +413,8 @@ export async function extractAllFramesFromVideo(videoBlobData, maxExpectedFrames
       seekNext();
     };
 
-    video.onerror = () => {
+    video.onerror = (e) => {
+      console.error('[videoEncoder] ❌ Video error during bulk frame extraction:', e);
       clearTimeout(timer);
       cleanup();
       resolve(frames);

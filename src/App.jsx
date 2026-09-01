@@ -543,6 +543,7 @@ export default function App() {
     const rawFiles = Array.from(event.target.files);
     if (!rawFiles.length) return;
 
+    console.log(`[PhotoVault] 📤 User selected ${rawFiles.length} file(s) for upload`);
     setIsProcessing(true);
     setProgressStats(null);
     setErrorMessage(null);
@@ -554,9 +555,12 @@ export default function App() {
         return isImg;
       });
 
+      console.log(`[PhotoVault] 📊 Processing ${imageFiles.length} images and ${mp4Files.length} MP4 containers`);
+
       // 1. Direct MP4 container import
       for (const mp4File of mp4Files) {
         setProgress(`Importing existing container: ${mp4File.name}...`);
+        console.log(`[PhotoVault] 📥 Importing existing MP4 container: ${mp4File.name}`);
         const buffer = await mp4File.arrayBuffer();
         const blobData = new Uint8Array(buffer);
         const groupId = mp4File.name.replace(/\.mp4$/i, '');
@@ -591,6 +595,7 @@ export default function App() {
 
       // 2. Image Clustering and HEVC Container Packing via Event-Driven Queue
       if (imageFiles.length > 0) {
+        console.log(`[PhotoVault] ⚡ Initializing VaultQueue for ${imageFiles.length} photos`);
         const vaultQueue = new VaultQueue();
 
         vaultQueue.on('container:uploaded', ({ itemIds }) => {
@@ -608,7 +613,7 @@ export default function App() {
         });
 
         vaultQueue.on('error', (err) => {
-          console.error('VaultQueue error:', err);
+          console.error('[PhotoVault] ❌ VaultQueue error:', err);
           setErrorMessage(err.message || String(err));
         });
 
@@ -618,12 +623,13 @@ export default function App() {
 
         // Await completion of all reactive tasks (analysis, encoding, and uploads)
         await vaultQueue.waitUntilComplete();
+        console.log('[PhotoVault] 🎉 VaultQueue batch complete!');
       }
 
       await loadData(true); // Final catch-all refresh
       setProgress('');
     } catch (err) {
-      console.error('Processing error:', err);
+      console.error('[PhotoVault] ❌ Processing error:', err);
       setErrorMessage(err.message || String(err));
       setProgress('');
     } finally {

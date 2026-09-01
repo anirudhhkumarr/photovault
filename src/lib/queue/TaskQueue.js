@@ -95,6 +95,7 @@ export class TaskQueue {
       };
 
       this.queues.get(taskType).push(task);
+      console.log(`[TaskQueue] 📥 Enqueued task: ${taskType} (id: ${task.id}, queued: ${this.queues.get(taskType).length})`);
       this.emit('task:enqueued', { taskType, task });
       this._pump(taskType);
     });
@@ -118,19 +119,26 @@ export class TaskQueue {
 
     for (let i = 0; i < availableSlots && queue.length > 0; i++) {
       const task = queue.shift();
-      this.activeWorkers.set(taskType, (this.activeWorkers.get(taskType) || 0) + 1);
+      const newActive = (this.activeWorkers.get(taskType) || 0) + 1;
+      this.activeWorkers.set(taskType, newActive);
 
+      console.log(`[TaskQueue] ⚙️ Started worker: ${taskType} (active: ${newActive}/${workerConfig.concurrency}, remaining in queue: ${queue.length})`);
       this.emit('task:started', { taskType, task });
 
       // Run worker asynchronously
       (async () => {
+        const startTime = Date.now();
         try {
           const result = await workerConfig.handler(task.data, task);
+          const elapsed = Date.now() - startTime;
           this.completedCount++;
+          console.log(`[TaskQueue] ✅ Completed task: ${taskType} in ${elapsed}ms (id: ${task.id})`);
           task.resolve(result);
           this.emit('task:completed', { taskType, task, result });
         } catch (error) {
+          const elapsed = Date.now() - startTime;
           this.failedCount++;
+          console.error(`[TaskQueue] ❌ Failed task: ${taskType} in ${elapsed}ms:`, error);
           task.reject(error);
           this.emit('task:error', { taskType, task, error });
         } finally {

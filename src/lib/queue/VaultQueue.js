@@ -78,6 +78,7 @@ export class VaultQueue {
         data: new Uint8Array(arrayBuffer)
       };
 
+      console.log(`[VaultQueue] 🔬 Analyzed ${item.name} (${(item.size / 1024 / 1024).toFixed(2)}MB, hash: ${contentHash?.substring(0, 8)}..., fingerprint: ${!!fingerprint})`);
       this.emit('photo:analyzed', item);
       await this.routeToCluster(item);
       return item;
@@ -85,6 +86,7 @@ export class VaultQueue {
 
     // 2. Container Hardware Encoding Worker (Concurrency: 1)
     this.taskQueue.registerWorker('ENCODE_CONTAINER', 1, async ({ groupId, items }) => {
+      console.log(`[VaultQueue] 🎬 Encoding container ${groupId} with ${items.length} photos...`);
       this.emit('container:encoding', { groupId, count: items.length });
       this.emit('progress', { 
         stage: 'encoding', 
@@ -97,6 +99,7 @@ export class VaultQueue {
 
       if (existingBlob) {
         const currentPhotosInGroup = (await getPhotos()).filter(p => p.videoId === groupId);
+        console.log(`[VaultQueue] 📦 Container ${groupId} already exists in DB with ${currentPhotosInGroup.length} photos. Appending ${items.length} new photos...`);
         const extractedFrames = await extractAllFramesFromVideo(existingBlob, currentPhotosInGroup.length);
         allImagesForGroup = [...extractedFrames.map(f => f.dataUrl), ...items.map(i => i.data)];
       } else {
@@ -148,6 +151,8 @@ export class VaultQueue {
       // Update in-memory size cache
       this.existingGroupSizes.set(groupId, totalOriginal);
 
+      console.log(`[VaultQueue] ✨ Encoded container ${groupId}: ${encoded.frameCount} frames, compressed ${(totalOriginal / 1024 / 1024).toFixed(2)}MB -> ${(encoded.blob.length / 1024 / 1024).toFixed(2)}MB (${((1 - encoded.blob.length / totalOriginal) * 100).toFixed(1)}% savings)`);
+
       this.emit('container:encoded', {
         groupId,
         blob: encoded.blob,
@@ -168,6 +173,7 @@ export class VaultQueue {
 
     // 3. Cloud Upload Worker Pool (Concurrency: 2)
     this.taskQueue.registerWorker('UPLOAD_CONTAINER', 2, async ({ groupId, blob, mimeType, items }) => {
+      console.log(`[VaultQueue] ☁️ Uploading container ${groupId} to Google Drive (${(blob.length / 1024 / 1024).toFixed(2)}MB)...`);
       this.emit('container:uploading', { groupId });
       this.emit('progress', { 
         stage: 'uploading', 
@@ -183,9 +189,12 @@ export class VaultQueue {
           const parsed = JSON.parse(dbJson);
           const count = parsed.photos ? parsed.photos.length : items.length;
           await uploadOrUpdateFileInGoogleDrive(`metadata_${groupId}_${count}.json`, dbJson, 'application/json', token);
+          console.log(`[VaultQueue] 🚀 Cloud sync complete for ${groupId}`);
         } catch (err) {
-          console.error(`Cloud upload failed for container ${groupId}:`, err);
+          console.error(`[VaultQueue] ❌ Cloud upload failed for container ${groupId}:`, err);
         }
+      } else {
+        console.log(`[VaultQueue] ℹ️ Cloud upload skipped for ${groupId} (not connected to Google Drive)`);
       }
 
       this.processedPhotos += items.length;
@@ -225,6 +234,7 @@ export class VaultQueue {
       if (p.contentHash && p.contentHash === item.contentHash) {
         if (this._canGroupAccept(p.videoId, item.size)) {
           matchedGroupId = p.videoId;
+          console.log(`[VaultQueue] 🔗 Exact duplicate match for ${item.name} in existing container ${matchedGroupId}`);
           break;
         }
       }
@@ -236,6 +246,7 @@ export class VaultQueue {
         if (p.fingerprint && arePhotosInSameScene(item.fingerprint, p.fingerprint)) {
           if (this._canGroupAccept(p.videoId, item.size)) {
             matchedGroupId = p.videoId;
+            console.log(`[VaultQueue] 🎨 Visual scene match for ${item.name} with existing photo in container ${matchedGroupId}`);
             break;
           }
         }
@@ -249,6 +260,7 @@ export class VaultQueue {
           if (prev.fingerprint && arePhotosInSameScene(item.fingerprint, prev.fingerprint)) {
             if (this._canGroupAccept(activeGroupId, item.size)) {
               matchedGroupId = activeGroupId;
+              console.log(`[VaultQueue] 🎨 Visual scene match for ${item.name} in active cluster ${matchedGroupId}`);
               break;
             }
           }
@@ -262,11 +274,16 @@ export class VaultQueue {
 
     if (!this.activeClusters.has(targetGroupId)) {
       this.activeClusters.set(targetGroupId, { items: [], size: 0, timer: null });
+      if (!matchedGroupId) {
+        console.log(`[VaultQueue] 🆕 Created new cluster ${targetGroupId} for ${item.name}`);
+      }
     }
 
     const cluster = this.activeClusters.get(targetGroupId);
     cluster.items.push(item);
     cluster.size += item.size;
+
+    console.log(`[VaultQueue] 📌 Added ${item.name} to cluster ${targetGroupId} (${cluster.items.length} items, ${(cluster.size / 1024 / 1024).toFixed(2)}MB)`);
 
     // Check if cluster is ready for encoding
     const shouldFlushImmediately = 
@@ -275,12 +292,14 @@ export class VaultQueue {
       (this.existingGroupSizes.get(targetGroupId) || 0) + cluster.size >= MAX_CONTAINER_SIZE * 0.95;
 
     if (shouldFlushImmediately) {
+      console.log(`[VaultQueue] ⚡ Cluster ${targetGroupId} reached readiness threshold (${cluster.items.length} items). Flushing immediately to encoder...`);
       if (cluster.timer) clearTimeout(cluster.timer);
       await this.flushCluster(targetGroupId);
     } else {
       // Set/reset idle debounce timer
       if (cluster.timer) clearTimeout(cluster.timer);
       cluster.timer = setTimeout(() => {
+        console.log(`[VaultQueue] ⏱️ Cluster ${targetGroupId} idle debounce timer fired (${cluster.items.length} items). Flushing to encoder...`);
         this.flushCluster(targetGroupId);
       }, IDLE_DEBOUNCE_MS);
     }

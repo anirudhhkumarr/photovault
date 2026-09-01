@@ -296,15 +296,7 @@ export class VaultQueue {
 
     if (shouldFlushImmediately) {
       console.log(`[VaultQueue] ⚡ Cluster ${targetGroupId} reached readiness threshold (${cluster.items.length} items). Flushing immediately to encoder...`);
-      if (cluster.timer) clearTimeout(cluster.timer);
       await this.flushCluster(targetGroupId);
-    } else {
-      // Set/reset idle debounce timer
-      if (cluster.timer) clearTimeout(cluster.timer);
-      cluster.timer = setTimeout(() => {
-        console.log(`[VaultQueue] ⏱️ Cluster ${targetGroupId} idle debounce timer fired (${cluster.items.length} items). Flushing to encoder...`);
-        this.flushCluster(targetGroupId);
-      }, IDLE_DEBOUNCE_MS);
     }
   }
 
@@ -314,11 +306,6 @@ export class VaultQueue {
   async flushCluster(groupId) {
     const cluster = this.activeClusters.get(groupId);
     if (!cluster || cluster.items.length === 0) return;
-
-    if (cluster.timer) {
-      clearTimeout(cluster.timer);
-      cluster.timer = null;
-    }
 
     const itemsToEncode = [...cluster.items];
     this.activeClusters.delete(groupId);
@@ -379,12 +366,7 @@ export class VaultQueue {
    */
   async waitUntilComplete() {
     // 1. Wait for analysis queue to finish
-    while (
-      (this.taskQueue.queues.get('ANALYZE_PHOTO')?.length || 0) > 0 ||
-      (this.taskQueue.activeWorkers.get('ANALYZE_PHOTO') || 0) > 0
-    ) {
-      await new Promise(r => setTimeout(r, 50));
-    }
+    await this.taskQueue.waitUntilTypeIdle('ANALYZE_PHOTO');
 
     // 2. Flush any remaining active clusters
     await this.flushAllClusters();

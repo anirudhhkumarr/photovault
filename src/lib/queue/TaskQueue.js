@@ -208,6 +208,32 @@ export class TaskQueue {
   }
 
   /**
+   * Returns a promise that resolves when a specific task type becomes completely idle.
+   */
+  waitUntilTypeIdle(taskType) {
+    const queue = this.queues.get(taskType) || [];
+    const active = this.activeWorkers.get(taskType) || 0;
+    if (queue.length === 0 && active === 0) {
+      return Promise.resolve();
+    }
+    return new Promise(resolve => {
+      const check = () => {
+        const q = this.queues.get(taskType) || [];
+        const a = this.activeWorkers.get(taskType) || 0;
+        if (q.length === 0 && a === 0) {
+          this.off('task:completed', check);
+          this.off('task:error', check);
+          this.off('idle', check);
+          resolve();
+        }
+      };
+      this.on('task:completed', check);
+      this.on('task:error', check);
+      this.on('idle', check);
+    });
+  }
+
+  /**
    * Clears pending queues and resets metrics.
    */
   clear() {

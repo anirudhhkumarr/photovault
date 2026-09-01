@@ -68,32 +68,23 @@ async function getSupportedEncoderConfig(width, height) {
   ];
 
   for (const cand of candidateConfigs) {
-    try {
-      const support = await VideoEncoder.isConfigSupported({
-        codec: cand.codec,
-        width,
-        height,
-        bitrate: 60_000_000,
-        framerate: 1
-      });
-      if (support && support.supported) {
-        return {
-          config: support.config || { codec: cand.codec },
-          muxerType: cand.muxer,
-          codecFamily: cand.avcType
-        };
-      }
-    } catch {
-      // Continue trying candidates
+    const support = await VideoEncoder.isConfigSupported({
+      codec: cand.codec,
+      width,
+      height,
+      bitrate: 60_000_000,
+      framerate: 1
+    });
+    if (support && support.supported) {
+      return {
+        config: support.config || { codec: cand.codec },
+        muxerType: cand.muxer,
+        codecFamily: cand.avcType
+      };
     }
   }
 
-  // Universal fallback to AVC
-  return {
-    config: { codec: 'avc1.640028' },
-    muxerType: 'mp4',
-    codecFamily: 'avc'
-  };
+  throw new Error(`No supported video encoder configuration found for resolution ${width}x${height}`);
 }
 
 /**
@@ -167,17 +158,7 @@ export async function encodeImagesToVideo(images, onProgress) {
     latencyMode: 'quality'
   };
 
-  try {
-    encoder.configure(encoderParams);
-  } catch {
-    encoder.configure({
-      ...encoderConfig,
-      width,
-      height,
-      bitrate: 60_000_000,
-      framerate: 1
-    });
-  }
+  encoder.configure(encoderParams);
 
   for (let i = 0; i < images.length; i++) {
     if (encodeError) throw encodeError;
@@ -265,14 +246,11 @@ export async function extractSingleFrame(videoBlobData, targetTimestampSec = 0.5
     const cleanup = () => {
       if (isDone) return;
       isDone = true;
-      try {
-        video.pause();
-        video.removeAttribute('src');
-        video.load();
-      } catch {}
-      setTimeout(() => {
-        try { URL.revokeObjectURL(url); } catch {}
-      }, 500);
+      URL.revokeObjectURL(url);
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+      video.remove();
     };
 
     const performExtraction = () => {
@@ -356,14 +334,11 @@ export async function extractAllFramesFromVideo(videoBlobData, maxExpectedFrames
     const cleanup = () => {
       if (isDone) return;
       isDone = true;
-      try {
-        video.pause();
-        video.removeAttribute('src');
-        video.load();
-      } catch {}
-      setTimeout(() => {
-        try { URL.revokeObjectURL(url); } catch {}
-      }, 500);
+      URL.revokeObjectURL(url);
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+      video.remove();
     };
 
     const captureCurrentFrame = () => {

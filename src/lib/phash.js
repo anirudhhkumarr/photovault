@@ -29,9 +29,7 @@ export async function extractSceneFingerprint(file) {
     const img = new Image();
     
     img.onload = () => {
-      setTimeout(() => {
-        try { URL.revokeObjectURL(url); } catch {}
-      }, 500);
+      URL.revokeObjectURL(url);
       
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -161,9 +159,7 @@ export async function extractSceneFingerprint(file) {
     };
     
     img.onerror = (err) => {
-      setTimeout(() => {
-        try { URL.revokeObjectURL(url); } catch {}
-      }, 500);
+      URL.revokeObjectURL(url);
       reject(new Error(`Failed to load image for scene fingerprint: ${file.name || err}`));
     };
     
@@ -246,9 +242,7 @@ export async function generateThumbnail(file, maxDimension = 1440) {
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
-      setTimeout(() => {
-        try { URL.revokeObjectURL(url); } catch {}
-      }, 500);
+      URL.revokeObjectURL(url);
       const canvas = document.createElement('canvas');
       let width = img.width;
       let height = img.height;
@@ -274,9 +268,7 @@ export async function generateThumbnail(file, maxDimension = 1440) {
       resolve(canvas.toDataURL('image/jpeg', 0.94));
     };
     img.onerror = (err) => {
-      setTimeout(() => {
-        try { URL.revokeObjectURL(url); } catch {}
-      }, 500);
+      URL.revokeObjectURL(url);
       reject(new Error(`Failed to generate thumbnail for ${file.name || 'image'}: ${err}`));
     };
     img.src = url;

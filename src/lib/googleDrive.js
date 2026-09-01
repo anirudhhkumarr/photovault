@@ -112,11 +112,7 @@ export function getUserProfile() {
   if (!userProfile) {
     const saved = localStorage.getItem('gdrive_user_profile');
     if (saved) {
-      try {
-        userProfile = JSON.parse(saved);
-      } catch {
-        userProfile = null;
-      }
+      userProfile = JSON.parse(saved);
     }
   }
   return userProfile;
@@ -126,8 +122,9 @@ export function getUserProfile() {
  * Helper to extract detailed Google API error descriptions.
  */
 async function parseGoogleError(res) {
+  const text = await res.text();
   try {
-    const data = await res.json();
+    const data = JSON.parse(text);
     if (data.error) {
       let msg = data.error.message || `Status ${res.status}`;
       if (data.error.errors && data.error.errors.length > 0) {
@@ -135,10 +132,10 @@ async function parseGoogleError(res) {
       }
       return msg;
     }
-  } catch {
-    // Ignore JSON parse failure
+  } catch (err) {
+    return text || `HTTP ${res.status}: ${res.statusText}`;
   }
-  return `HTTP ${res.status}: ${res.statusText}`;
+  return text || `HTTP ${res.status}: ${res.statusText}`;
 }
 
 /**

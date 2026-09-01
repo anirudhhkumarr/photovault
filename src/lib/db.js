@@ -69,6 +69,16 @@ export async function addVideo(video) {
   return db.put('videos', video);
 }
 
+export async function getVideo(id) {
+  const db = await initDB();
+  return db.get('videos', id);
+}
+
+export async function deleteVideo(id) {
+  const db = await initDB();
+  return db.delete('videos', id);
+}
+
 export async function getAllVideos() {
   const db = await initDB();
   return db.getAll('videos');

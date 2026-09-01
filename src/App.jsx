@@ -7,14 +7,14 @@ import ErrorBanner from './components/ErrorBanner';
 import { createVaultPipeline } from './lib/VaultQueue';
 import { connectDrive, getProfile, initAuth, disconnectDrive } from './lib/auth';
 import { uploadContainer, syncFromDrive, downloadContainer, deleteContainerItem } from './lib/driveSync';
-import { getAllPhotos, getFileHash, addPhoto, exportContainerMetadata, clearDB, deletePhoto } from './lib/db';
+import { getAllPhotos, getFileHash, addPhoto, exportContainerMetadata, clearDB, deletePhoto, addVideo, getVideo, deleteVideo, getAllVideos } from './lib/db';
 import { encodeContainer, extractFrame } from './lib/videoEncoder';
 import { analyzeVisualFeatures, isSameScene } from './lib/phash';
 
 const defaultServices = {
   encoder: { encodeContainer, extractFrame },
   drive: { uploadContainer, syncFromDrive, downloadContainer, deleteContainerItem },
-  db: { getFileHash, addPhoto, exportContainerMetadata, clearDB, deletePhoto },
+  db: { getFileHash, addPhoto, exportContainerMetadata, clearDB, deletePhoto, addVideo, getVideo, deleteVideo, getAllVideos },
   phash: { analyzeVisualFeatures, isSameScene },
   image: { createImageBitmap: (f) => window.createImageBitmap(f) }
 };
@@ -33,6 +33,7 @@ function App() {
   const [queueIdle, setQueueIdle] = useState(true);
   const [totalSavedBytes, setTotalSavedBytes] = useState(0);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [progressMsg, setProgressMsg] = useState('');
 
   // Load photos from DB on mount
   const loadData = async () => {
@@ -40,12 +41,25 @@ function App() {
       const storedPhotos = await getAllPhotos();
       if (storedPhotos && storedPhotos.length > 0) {
         // Sort by newest first
-        storedPhotos.sort((a, b) => b.createdAt - a.createdAt);
+        storedPhotos.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
         setPhotos(storedPhotos);
         
-        // Calculate saved bytes (assuming ~85% compression)
-        const saved = storedPhotos.reduce((sum, p) => sum + (p.originalSize * 0.85), 0);
-        setTotalSavedBytes(saved);
+        const allVideos = await services.db.getAllVideos();
+      const savedBytes = allVideos.reduce((acc, v) => acc + (v.blob?.size || 0), 0);
+      setTotalSavedBytes(savedBytes);
+
+      // Auto-retry stranded uploads
+      if (allVideos.length > 0) {
+        for (const video of allVideos) {
+          vaultQueue.enqueue('UPLOAD_CONTAINER', {
+            containerId: video.id,
+            blob: video.blob,
+            manifest: video.manifest,
+            photos: video.photos,
+            originalTotalBytes: video.originalTotalBytes
+          });
+        }
+      }
       } else {
         setPhotos([]);
       }
@@ -55,9 +69,18 @@ function App() {
   };
 
   useEffect(() => {
+    // ALWAYS load local data first, so the app is useful offline
     loadData();
+
     if (initAuth()) {
       setProfile(getProfile());
+      setIsSyncing(true);
+      services.drive.syncFromDrive(services.db.addPhoto, services.db.deletePhoto)
+        .then(async () => await loadData())
+        .catch(err => {
+          console.error(err);
+        })
+        .finally(() => setIsSyncing(false));
     }
   }, []);
 
@@ -78,29 +101,32 @@ function App() {
     const handleTaskCompleted = (e) => {
       const task = e.detail;
       
-      // When analysis is complete, replace skeleton with analyzed photo
       if (task.type === 'ANALYZE_PHOTO') {
         const photoData = task.result;
         setPhotos(prev => prev.map(p => p.id === photoData.skeletonId ? photoData : p));
       }
       
-      // When upload is complete, update saved bytes
       if (task.type === 'UPLOAD_CONTAINER') {
         const { originalTotalBytes } = task.result;
         setTotalSavedBytes(prev => prev + (originalTotalBytes * 0.85));
+        loadData(); // Reload photos to update syncStatus to 'synced'
       }
     };
+
+    const handleProgress = (e) => setProgressMsg(e.detail.message);
 
     vaultQueue.addEventListener('task:started', handleStarted);
     vaultQueue.addEventListener('idle', handleIdle);
     vaultQueue.addEventListener('task:error', handleError);
     vaultQueue.addEventListener('task:completed', handleTaskCompleted);
+    vaultQueue.addEventListener('vault:progress', handleProgress);
 
     return () => {
       vaultQueue.removeEventListener('task:started', handleStarted);
       vaultQueue.removeEventListener('idle', handleIdle);
       vaultQueue.removeEventListener('task:error', handleError);
       vaultQueue.removeEventListener('task:completed', handleTaskCompleted);
+      vaultQueue.removeEventListener('vault:progress', handleProgress);
     };
   }, []);
 
@@ -145,15 +171,25 @@ function App() {
 
   const handleFilesAdded = async (files) => {
     try {
+      // Filter out non-images and directories
+      const imageFiles = files.filter(f => f.type && f.type.startsWith('image/'));
+      
+      if (imageFiles.length < files.length) {
+        setError(new Error(`Skipped ${files.length - imageFiles.length} non-image files.`));
+      }
+      
+      if (imageFiles.length === 0) return;
+
       // 1. Create optimistic skeleton entries
-      const newSkeletons = files.map((f, i) => {
+      const newSkeletons = imageFiles.map((f, i) => {
         const skelId = `skel-${Date.now()}-${i}`;
         return {
           id: skelId,
           skeletonId: skelId,
           isSkeleton: true,
           file: f,
-          originalName: f.name
+          originalName: f.name,
+          createdAt: Date.now()
         };
       });
       
@@ -242,9 +278,18 @@ function App() {
       />
       
       <ErrorBanner error={error} onDismiss={() => setError(null)} />
+
+      {progressMsg && !queueIdle && (
+        <div className="card mb-8 animate-fade-in flex flex-col gap-4" style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--border-color)', padding: '1rem', borderRadius: '16px', marginBottom: '1.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <div className="spinner" style={{ width: '20px', height: '20px', borderWidth: '2px', borderTopColor: 'var(--accent-color)' }}></div>
+            <span style={{ fontWeight: 600, color: 'var(--text-color)' }}>{progressMsg}</span>
+          </div>
+        </div>
+      )}
       
       <PhotoGrid 
-        photos={photos} 
+        photos={photos}  
         onFilesAdded={handleFilesAdded} 
         onPhotoClick={setSelectedPhoto} 
       />

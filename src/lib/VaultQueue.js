@@ -68,7 +68,8 @@ export function createVaultPipeline(services) {
         frameIndex: i,
         timestamp: i + 0.5,
         createdAt: Date.now(),
-        skeletonId: photo.skeletonId
+        skeletonId: photo.skeletonId,
+        syncStatus: 'pending'
       };
       await services.db.addPhoto(dbPhoto);
       cluster[i] = dbPhoto;
@@ -76,10 +77,18 @@ export function createVaultPipeline(services) {
     
     const originalTotalBytes = cluster.reduce((sum, p) => sum + p.originalSize, 0);
     
+    // SAVE TO LOCAL DATABASE FOR PERSISTENCE BEFORE UPLOAD
+    await services.db.addVideo({
+      id: containerId,
+      blob,
+      manifest,
+      photos: cluster,
+      originalTotalBytes
+    });
+    
     context.queue.complete(task.id, {
       containerId,
       blob,
-      mimeType,
       manifest,
       originalTotalBytes,
       itemCount: cluster.length,
@@ -88,18 +97,42 @@ export function createVaultPipeline(services) {
   });
 
   router.use('UPLOAD_CONTAINER', async (task, context) => {
-    const { containerId, blob, manifest, originalTotalBytes, photos } = task.payload;
+    // If blob is missing in payload (e.g. retry), fetch from DB
+    let { containerId, blob, manifest, originalTotalBytes, photos } = task.payload;
+    
+    if (!blob) {
+      const dbVideo = await services.db.getVideo(containerId);
+      if (!dbVideo) throw new Error(`Video container ${containerId} not found in local database`);
+      blob = dbVideo.blob;
+      manifest = dbVideo.manifest;
+      photos = dbVideo.photos;
+      originalTotalBytes = dbVideo.originalTotalBytes;
+    }
     
     context.queue.dispatchEvent(new CustomEvent('vault:progress', { detail: { message: `Uploading ${containerId}.mp4...` } }));
     
-    await services.drive.uploadContainer({
-      groupId: containerId,
-      blob,
-      manifest,
-      fullPhotos: photos
-    });
-    
-    context.queue.complete(task.id, { containerId, originalTotalBytes, photos });
+    try {
+      await services.drive.uploadContainer({
+        groupId: containerId,
+        blob,
+        manifest,
+        fullPhotos: photos
+      });
+      
+      // SUCCESS! Mark as synced and delete heavy local blob
+      for (const p of photos) {
+        await services.db.addPhoto({ ...p, syncStatus: 'synced' });
+      }
+      await services.db.deleteVideo(containerId);
+      
+      context.queue.complete(task.id, { containerId, originalTotalBytes, photos });
+    } catch (err) {
+      // FAILURE! Mark as failed
+      for (const p of photos) {
+        await services.db.addPhoto({ ...p, syncStatus: 'failed' });
+      }
+      throw err;
+    }
   });
 
   // Attach PipelineRouter to TaskQueue

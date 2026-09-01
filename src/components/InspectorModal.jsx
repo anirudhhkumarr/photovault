@@ -1,23 +1,37 @@
 import { X, Download, Trash2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
-export default function InspectorModal({ photo, onClose, onDownload, onDelete }) {
+export default function InspectorModal({ photo, onClose, onDownload, onDelete, onFetchFullRes }) {
   const [imageSrc, setImageSrc] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // In a real implementation, we would extract the full-res frame from the video container here.
-    // For now, we will just use the thumbnail or an object URL if available.
     if (photo.file) {
       const url = URL.createObjectURL(photo.file);
       setImageSrc(url);
       setLoading(false);
       return () => URL.revokeObjectURL(url);
     } else {
+      // Show thumbnail immediately while fetching full res
       setImageSrc(photo.thumbnailDataUrl);
-      setLoading(false);
+      
+      // Fetch high-res frame from video container
+      if (onFetchFullRes) {
+        setLoading(true);
+        onFetchFullRes(photo).then(fullResUrl => {
+          if (fullResUrl) {
+            setImageSrc(fullResUrl);
+          }
+        }).catch(err => {
+          console.error('Failed to load high res image', err);
+        }).finally(() => {
+          setLoading(false);
+        });
+      } else {
+        setLoading(false);
+      }
     }
-  }, [photo]);
+  }, [photo, onFetchFullRes]);
 
   if (!photo) return null;
 

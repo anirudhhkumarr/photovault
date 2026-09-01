@@ -283,8 +283,8 @@ function App() {
         isBlobUrl = true;
       } else {
         // Fetch container from Google Drive and extract frame
-        const { blob, mimeType } = await downloadContainer(photo.videoId);
-        const dataUrl = await extractFrame(blob, photo.frameIndex, photo.mimeType);
+        const { blob, mimeType } = await services.drive.downloadContainer(photo.videoId);
+        const dataUrl = await services.encoder.extractFrame(blob, photo.frameIndex, photo.mimeType);
         url = dataUrl;
       }
       
@@ -314,6 +314,16 @@ function App() {
       window.addEventListener('focus', cleanup);
     } catch (err) {
       setError(err);
+    }
+  };
+
+  const handleFetchFullRes = async (photo) => {
+    try {
+      const { blob } = await services.drive.downloadContainer(photo.videoId);
+      return await services.encoder.extractFrame(blob, photo.frameIndex, photo.mimeType);
+    } catch (err) {
+      console.error('Failed to fetch full res', err);
+      throw err;
     }
   };
 
@@ -425,6 +435,7 @@ function App() {
           onClose={() => setSelectedPhoto(null)} 
           onDownload={handleDownload}
           onDelete={handleDelete}
+          onFetchFullRes={handleFetchFullRes}
         />
       )}
     </div>

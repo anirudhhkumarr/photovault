@@ -31,7 +31,7 @@ let gisInitialized = false;
 let tokenClient = null;
 let googleProfile = null;
 
-const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '548261245531-cr6ib16n7vcqjqjcktl4mq7mbe09hvq9.apps.googleusercontent.com';
 const SCOPES = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email';
 
 export function loadGis() {

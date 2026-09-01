@@ -1,0 +1,46 @@
+import { Cloud, CheckCircle, Loader } from 'lucide-react';
+
+export default function Header({ profile, onConnect, queueIdle, totalSavedBytes }) {
+  const savedMb = (totalSavedBytes / (1024 * 1024)).toFixed(2);
+  
+  return (
+    <header className="header glass">
+      <div className="header-brand">PhotoVault</div>
+      
+      <div className="header-actions">
+        {totalSavedBytes > 0 && (
+          <div style={{ fontSize: '0.875rem', color: 'var(--success)' }}>
+            Saved: {savedMb} MB
+          </div>
+        )}
+        
+        {!queueIdle && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--primary)' }}>
+            <Loader size={16} className="spin" style={{ animation: 'spin 1s linear infinite' }} />
+            <span style={{ fontSize: '0.875rem' }}>Syncing...</span>
+          </div>
+        )}
+        
+        {profile ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <img 
+              src={profile.picture} 
+              alt="Profile" 
+              style={{ width: 32, height: 32, borderRadius: '50%' }} 
+            />
+            <span style={{ fontSize: '0.875rem', fontWeight: 500 }}>{profile.name}</span>
+            <CheckCircle size={16} color="var(--success)" />
+          </div>
+        ) : (
+          <button className="btn" onClick={onConnect}>
+            <Cloud size={18} />
+            Connect Drive
+          </button>
+        )}
+      </div>
+      <style>{`
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+      `}</style>
+    </header>
+  );
+}

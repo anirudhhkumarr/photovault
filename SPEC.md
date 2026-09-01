@@ -46,8 +46,8 @@ Key goals:
 |    - HD Retina Thumbnail Data URL (1440px)                                    |
 |                                                                               |
 |  [ Stage 2: VISUAL CLUSTERING & ROUTING ]                                     |
-|    - Continuous Cosine & Spatial Similarity Matching (Threshold: 0.72)        |
-|    - In-Memory Cluster Buffers (Threshold: 10 items / 25MB)                   |
+|    - Continuous Cosine & Spatial Similarity Matching (Threshold: 0.80)        |
+|    - In-Memory Cluster Buffers (Threshold: 150MB of original photos)          |
 |                                                                               |
 |  [ Stage 3: ENCODE_CONTAINER (Concurrency: 1) ]                               |
 |    - WebCodecs Hardware VideoEncoder + mp4-muxer / webm-muxer                 |
@@ -81,13 +81,13 @@ Key goals:
    - **64-Bit Global Gradient dHash:** Adjacent pixel luminance comparisons.
 3. **Similarity Metric & Grouping:**
    - Score: `0.50 * top12_spatial_avg + 0.30 * color_score + 0.20 * struct_score`.
-   - Threshold `0.72` clusters burst shots and same-scene photos into the same video container.
+   - Threshold `0.80` clusters burst shots and same-scene photos into the same video container.
 
 ### B. Hardware Video Compression Container Engine (`videoEncoder.js`)
 1. **WebCodecs Hardware Encoding:**
    - Align image dimensions to multiples of 16 (`align16`) to satisfy hardware encoders.
    - Negotiate supported codec profile via `VideoEncoder.isConfigSupported()`:
-     - HEVC Main Profile Level 6.2/6.0/5.1 (`hvc1.1.6.L186.B0`, `hev1.1.6.L186.B0`, `hvc1.1.6.L153.B0`, `hvc1.1.6.L120.90`) via `mp4-muxer`.
+     - HEVC Main 4:4:4 10 profile for better color fidelity (`hvc1.1.6.L186.B0`, `hev1.1.6.L186.B0`, `hvc1.1.6.L153.B0`, `hvc1.1.6.L120.90`) via `mp4-muxer`.
      - AVC/H.264 High Profile (`avc1.640034`, `avc1.640028`, `avc1.4d002a`) via `mp4-muxer`.
      - VP9 Profile 0 (`vp09.00.10.08`) via `webm-muxer`.
    - Each frame is encoded as an intra-keyframe (`keyFrame: true`, `quantizer: 0`, `bitrate: 60000000`, `framerate: 1`, duration: 1.0s/1000000us).
@@ -134,9 +134,14 @@ Key goals:
 ### F. User Interface & Experience
 - **Aesthetics:** Vibrant colors, glassmorphism, sleek dark mode, modern typography (Inter/Roboto), and subtle micro-animations on hover/transitions.
 - **Header:** Storage metrics (Original size, Compressed size, Space saved percentage), Google Drive user profile badge / connect button, live upload progress indicator.
-- **Photo Grid:** Drag-and-drop file/folder uploader, skeleton loaders during analysis/encoding, photo cards with download button, and visual scene indicators.
+- **Photo Grid:** Drag-and-drop file/folder uploader, virtualized infinite scroll pagination, skeleton loaders during analysis/encoding, photo cards with download button, and visual scene indicators.
 - **Photo Inspector:** Full-screen modal, high-resolution canvas extraction, frame navigation, metadata view, and direct download.
 - **Error Banner:** Global error alert banner that surfaces non-swallowed exceptions directly to the user.
+- **Debug Logging:** Comprehensive console debug logs across task queue, vault coordinator, video encoder, JIT fetch, inspect, and download logic.
+
+### G. Static Pages & SEO
+- **Privacy Policy & Terms of Service:** Standalone HTML files for `/privacy.html` and `/terms.html`.
+- **Google Verification:** Google Site verification meta tag in `index.html` and Google Search Console HTML verification file.
 
 ---
 
@@ -167,6 +172,10 @@ Key goals:
 ### ⚠️ Pitfall 6: Artificial Timeouts & Silent Error Masking
 - **Issue:** Wrapping async operations in arbitrary `setTimeout` delays (e.g. `Promise.race([..., setTimeout(6000)])`) masks performance issues, causes non-deterministic race conditions on slow machines, and swallows underlying exceptions.
 - **Solution:** Maintain a strict **Hard-Failing Fail-Fast Principle**. All async operations must be driven purely by native events and promises. Zero empty catch blocks (`try { ... } catch {}`), and all errors must propagate directly to the user-facing error banner.
+
+### ⚠️ Pitfall 7: macOS/Safari `(null)` Folder Permission Error on Download
+- **Issue:** Calling `a.click()` on a dynamically generated Blob URL in Safari / macOS sometimes throws a sandbox permission error (`(null) folder`) or silently fails to save the file.
+- **Solution:** Set `a.setAttribute('target', '_self')` and dispatch a native `MouseEvent('click', { bubbles: true, cancelable: true })`. To avoid arbitrary timeouts for revoking the Blob URL, wait for a `focus` event on the `window` (triggered when the user closes the save dialog) to safely call `URL.revokeObjectURL()`.
 
 ---
 

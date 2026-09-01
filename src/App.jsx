@@ -6,15 +6,15 @@ import ErrorBanner from './components/ErrorBanner';
 
 import { createVaultPipeline } from './lib/VaultQueue';
 import { connectDrive, getProfile, initAuth, disconnectDrive } from './lib/auth';
-import { uploadContainer, syncFromDrive, downloadContainer, deleteContainerItem } from './lib/driveSync';
-import { getAllPhotos, getFileHash, addPhoto, exportContainerMetadata, clearDB, deletePhoto, addVideo, getVideo, deleteVideo, getAllVideos } from './lib/db';
+import { uploadContainer, syncFromDrive, downloadContainer, deleteContainerItem, fetchVaultMetadata } from './lib/driveSync';
+import { getAllPhotos, getFileHash, addPhoto, exportContainerMetadata, clearDB, deletePhoto, addVideo, getVideo, deleteVideo, getAllVideos, initDB, deleteVaultSkeletons } from './lib/db';
 import { encodeContainer, extractFrame } from './lib/videoEncoder';
 import { analyzeVisualFeatures, isSameScene } from './lib/phash';
 
 const defaultServices = {
   encoder: { encodeContainer, extractFrame },
-  drive: { uploadContainer, syncFromDrive, downloadContainer, deleteContainerItem },
-  db: { getAllPhotos, getFileHash, addPhoto, exportContainerMetadata, clearDB, deletePhoto, addVideo, getVideo, deleteVideo, getAllVideos },
+  drive: { uploadContainer, syncFromDrive, downloadContainer, deleteContainerItem, fetchVaultMetadata },
+  db: { getAllPhotos, getFileHash, addPhoto, exportContainerMetadata, clearDB, deletePhoto, addVideo, getVideo, deleteVideo, getAllVideos, initDB, deleteVaultSkeletons },
   phash: { analyzeVisualFeatures, isSameScene },
   image: { createImageBitmap: (f) => window.createImageBitmap(f) }
 };
@@ -36,6 +36,7 @@ function App() {
   const [progressMsg, setProgressMsg] = useState('');
   const [uploadStats, setUploadStats] = useState({ active: false, completed: 0, total: 0 });
   const photoUpdatesQueue = useRef(new Map());
+  const loadingVaultsRef = useRef(new Set());
 
   // Load photos from DB on mount
   const loadData = async () => {
@@ -357,6 +358,9 @@ function App() {
 
   const handleLazyLoadVault = async (photo) => {
     if (!photo.metaFileId || !photo.videoId) return;
+    if (loadingVaultsRef.current.has(photo.videoId)) return; // Prevent duplicate requests
+    
+    loadingVaultsRef.current.add(photo.videoId);
     try {
       const photos = await services.drive.fetchVaultMetadata(photo.metaFileId);
       await services.db.deleteVaultSkeletons(photo.videoId);
@@ -366,6 +370,7 @@ function App() {
       await loadData();
     } catch (err) {
       console.error('Failed to lazy load vault:', err);
+      loadingVaultsRef.current.delete(photo.videoId); // Allow retry on failure
     }
   };
 

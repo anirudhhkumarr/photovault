@@ -13,15 +13,28 @@ Key goals:
 
 ---
 
-## 2. System Architecture & Components
+## 2. Technology Stack
+- **Frontend Framework:** React 19
+- **Build Tooling:** Vite (with `vitest` for automated testing)
+- **Styling:** Vanilla CSS (Dark mode optimized, glassmorphism, modern typography) - **NO TailwindCSS**.
+- **Icons:** `lucide-react`
+- **Video Muxing:** `mp4-muxer`, `webm-muxer`
+- **Database:** `idb` (IndexedDB Promise wrapper)
+- **Cloud API:** Google Identity Services (GIS) & Google Drive API v3
+
+---
+
+## 3. System Architecture & Components
 
 ```
 +-------------------------------------------------------------------------------+
 |                                  PhotoVault UI                                |
-|  - Storage Savings Dashboard (Original vs Compressed vs Savings %)            |
-|  - Google Drive Connect & OAuth2 Profile Integration                          |
-|  - Reactive Photo Grid with Drag-and-Drop & Skeletons                         |
-|  - High-Resolution Photo Inspector & Lossless Original Exporter               |
+|  - App.jsx (Root State & Routing)                                             |
+|  - Header.jsx (Storage Metrics, GDrive Connect, Global Progress)              |
+|  - PhotoGrid.jsx (Drag-and-Drop, Skeleton Loaders, Virtualization)            |
+|  - PhotoCard.jsx (Thumbnail, Metadata, Scene Indicator)                       |
+|  - InspectorModal.jsx (High-Res Canvas, Frame Navigation, Download)           |
+|  - ErrorBanner.jsx (Global Exception Surfacing)                               |
 +---------------------------------------+---------------------------------------+
                                         |
 +---------------------------------------v---------------------------------------+
@@ -55,13 +68,13 @@ Key goals:
 
 ---
 
-## 3. Subsystem Detailed Specifications
+## 4. Subsystem Detailed Specifications
 
 ### A. Computer Vision & Scene Clustering (`phash.js`)
 1. **SHA-256 Exact Byte Deduplication:**
    - Hash raw image bytes with Web Crypto API (`crypto.subtle.digest('SHA-256', buffer)`).
    - Skip duplicate uploads immediately before any encoding.
-2. **Visual Feature Extraction:**
+2. **Visual Feature Extraction (via OffscreenCanvas):**
    - **Normalized 64x64 Canvas:** Scale and center-crop image into a 64x64 working buffer.
    - **Spatial 4x4 Block Grid (16 sub-regions):** Each 16x16 block stores average luminance, horizontal gradient, and vertical gradient.
    - **32-Bin HSV Ambient Color Histogram:** 16 Hue bins, 8 Saturation bins, 8 Value bins to measure lighting and color temperature.
@@ -72,43 +85,54 @@ Key goals:
 
 ### B. Hardware Video Compression Container Engine (`videoEncoder.js`)
 1. **WebCodecs Hardware Encoding:**
-   - Align image dimensions to multiples of 16 (`align16`).
-   - Negotiate supported codec profile:
+   - Align image dimensions to multiples of 16 (`align16`) to satisfy hardware encoders.
+   - Negotiate supported codec profile via `VideoEncoder.isConfigSupported()`:
      - HEVC Main Profile Level 6.2/6.0/5.1 (`hvc1.1.6.L186.B0`, `hev1.1.6.L186.B0`, `hvc1.1.6.L153.B0`, `hvc1.1.6.L120.90`) via `mp4-muxer`.
      - AVC/H.264 High Profile (`avc1.640034`, `avc1.640028`, `avc1.4d002a`) via `mp4-muxer`.
      - VP9 Profile 0 (`vp09.00.10.08`) via `webm-muxer`.
-   - Each frame is encoded as an intra-keyframe (`keyFrame: true`, `quantizer: 0`, `bitrate: 60Mbps`, duration: 1.0s).
+   - Each frame is encoded as an intra-keyframe (`keyFrame: true`, `quantizer: 0`, `bitrate: 60000000`, `framerate: 1`, duration: 1.0s/1000000us).
 2. **Lossless Frame Extraction:**
    - Extract single or all frames from off-screen `<video>` on native `seeked` / `canplay` events.
    - Dynamic target MIME export (`image/jpeg` with 0.98 quality for JPEGs, `image/png` for PNGs).
 
 ### C. Concurrency Task Queue (`TaskQueue.js` & `VaultQueue.js`)
 1. **Event-Driven Architecture:**
+   - Implements native `EventTarget` or lightweight Pub/Sub for state transitions (`PENDING -> RUNNING -> COMPLETED | FAILED`).
    - Supports task prioritization, configurable concurrency limits per worker type, and lifecycle events (`task:enqueued`, `task:started`, `task:completed`, `task:error`, `idle`).
 2. **Lifecycle Synchronization:**
-   - `waitUntilTypeIdle(taskType)` and `waitUntilIdle()` resolve based on event emissions without polling or timeouts.
-3. **Multi-Stage Coordination:**
-   - `ANALYZE_PHOTO` (Concurrency 4) -> Clustering -> `ENCODE_CONTAINER` (Concurrency 1) -> `UPLOAD_CONTAINER` (Concurrency 2).
+   - `waitUntilTypeIdle(taskType)` and `waitUntilIdle()` resolve based on event emissions without polling (`setInterval`) or timeouts (`setTimeout`).
+3. **Multi-Stage Coordination (`VaultQueue`):**
+   - Orchestrates the pipeline: `ANALYZE_PHOTO` (Concurrency 4) -> Clustering -> `ENCODE_CONTAINER` (Concurrency 1) -> `UPLOAD_CONTAINER` (Concurrency 2).
 
 ### D. Google Drive Cloud Synchronization (`googleDrive.js`)
 1. **Authentication:**
-   - Client-side Google Identity Services (GIS) OAuth2 token client.
+   - Client-side Google Identity Services (GIS) OAuth2 token client (`google.accounts.oauth2.initTokenClient`).
    - Scopes: `https://www.googleapis.com/auth/drive.file`, `userinfo.profile`, `userinfo.email`.
-2. **Concurrency Mutex:**
-   - Mutex lock guarantees that only one request creates the `Photo Vault` folder.
+2. **Concurrency Mutex (`Mutex` class):**
+   - Mutex lock guarantees that only one concurrent request checks/creates the `Photo Vault` folder.
 3. **RFC 2387 Multipart Uploads:**
-   - Single-request upload with boundary containing metadata (`application/json; charset=UTF-8`) and binary video container (`video/mp4` or `video/webm`).
-   - Manifest metadata stored in `appProperties`.
+   - Single-request upload to `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart`.
+   - Body boundary containing metadata part (`application/json; charset=UTF-8`) and binary video container part (`video/mp4` or `video/webm`).
+   - Manifest metadata (photo hashes, dimensions, frame indices) is stored serialized in `appProperties` to avoid excessive Drive API calls.
 4. **Cloud Import & JIT Video Fetching:**
-   - Scans container manifests from Google Drive on connect and populates local database without fetching entire video binaries until inspection or download.
+   - Scans container manifests from Google Drive on connect and populates local database. Avoids fetching entire video binaries until a photo is specifically inspected or downloaded.
 
 ### E. Local Storage Architecture (`db.js`)
-- IndexedDB database `PhotoVaultDB` (version 2):
-  - `photos`: key `id` (autoIncrement), indexes: `contentHash`, `videoId`, `createdAt`.
-  - `videos`: key `id` (groupId).
-  - `sync_meta`: key `key`.
+- IndexedDB database `PhotoVaultDB` (version 2) using `idb` wrapper.
+- **Stores:**
+  1. `photos`: 
+     - KeyPath: `id` (autoIncrement).
+     - Fields: `originalName`, `originalSize`, `mimeType`, `width`, `height`, `hash` (SHA-256), `thumbnailDataUrl`, `videoId`, `frameIndex`, `timestamp`, `createdAt`.
+     - Indexes: `contentHash`, `videoId`, `createdAt`.
+  2. `videos`: 
+     - KeyPath: `id` (string uuid).
+     - Fields: `blob` (binary data), `driveId` (string), `duration`, `size`, `synced` (boolean), `createdAt`.
+  3. `sync_meta`: 
+     - KeyPath: `key` (string).
+     - Fields: `value`. Used for storing `lastSyncTime`, `googleDriveFolderId`, etc.
 
 ### F. User Interface & Experience
+- **Aesthetics:** Vibrant colors, glassmorphism, sleek dark mode, modern typography (Inter/Roboto), and subtle micro-animations on hover/transitions.
 - **Header:** Storage metrics (Original size, Compressed size, Space saved percentage), Google Drive user profile badge / connect button, live upload progress indicator.
 - **Photo Grid:** Drag-and-drop file/folder uploader, skeleton loaders during analysis/encoding, photo cards with download button, and visual scene indicators.
 - **Photo Inspector:** Full-screen modal, high-resolution canvas extraction, frame navigation, metadata view, and direct download.
@@ -116,7 +140,7 @@ Key goals:
 
 ---
 
-## 4. Design & Architecture Pitfalls (Lessons Learned & Invariants)
+## 5. Design & Architecture Pitfalls (Lessons Learned & Invariants)
 
 ### ⚠️ Pitfall 1: WebKit / Safari Blob URL Lifecycle (`WebKitBlobResource error 1`)
 - **Issue:** Revoking an object URL (`URL.revokeObjectURL(url)`) while a `<video>` or `<img>` element still has its `src` bound to that URL causes WebKit to cancel the underlying media stream immediately and throw `WebKitBlobResource error 1`.
@@ -146,8 +170,76 @@ Key goals:
 
 ---
 
-## 5. Engineering Invariants & Rules
+## 6. Engineering Invariants & Rules
 1. **Hard-Failing Fail-Fast Principle:** Throw and reject on all failures with clear messages.
 2. **Zero Artificial Delays / Timeouts:** No `setTimeout` or `setInterval` to mask latency.
 3. **MIME Type & Header Integrity:** Exported files must match their extensions with valid headers (`FF D8 FF` for JPEG, `89 50 4E 47` for PNG).
-4. **Clean Workspace Policy:** Never leave temporary test artifacts or screenshots in source directories.
+4. **Clean Workspace Policy:** Never leave temporary test artifacts or screenshots in source directories. Configure Vitest to disable screenshot failures (`test.browser.screenshotFailures = false`).
+5. **No TailwindCSS:** Enforce custom CSS styling per the tech stack requirements.
+
+---
+
+## 7. Data Formats & Schemas
+
+### Google Drive Manifest (appProperties)
+When a video container is uploaded to Google Drive, the `appProperties` metadata field on the file must store a serialized JSON manifest of the photos contained inside, ensuring the client can reconstruct the database without downloading the binary video payload. Because `appProperties` values are limited to 124 bytes per property in the Drive API, metadata must be carefully minified or split.
+
+**Format (Logical structure before minification/splitting):**
+```json
+{
+  "manifest": {
+    "v": 1,
+    "c": "HEVC",
+    "p": [
+      {
+        "h": "e3b0c...",
+        "w": 6016,
+        "ht": 4000,
+        "i": 0,
+        "m": "image/jpeg",
+        "n": "DSC0954.JPG",
+        "s": 14500000
+      }
+    ]
+  }
+}
+```
+*(Note: To fit in `appProperties`, the keys are heavily minified. `h` = hash, `w` = width, `ht` = height, `i` = frame index, `m` = mime, `n` = filename, `s` = original size).*
+
+### Task Queue Payloads
+Tasks moving through `VaultQueue` adhere to strict payload structures:
+
+**ANALYZE_PHOTO Payload:**
+```javascript
+{
+  file: /* File or Blob object */
+}
+```
+
+**ENCODE_CONTAINER Payload:**
+```javascript
+{
+  groupId: "uuid-1234",
+  items: [
+    {
+      file: /* File or Blob object */,
+      hash: "e3b0c442...",
+      width: 6016,
+      height: 4000,
+      mimeType: "image/jpeg",
+      originalName: "DSC0954.JPG",
+      originalSize: 14500000,
+      thumbnailDataUrl: "data:image/jpeg;base64,..."
+    }
+  ]
+}
+```
+
+**UPLOAD_CONTAINER Payload:**
+```javascript
+{
+  groupId: "uuid-1234",
+  blob: /* Blob object (video/mp4 or video/webm) */,
+  manifest: /* Logical manifest object mapping to the group */
+}
+```

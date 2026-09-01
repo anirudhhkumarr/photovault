@@ -5,16 +5,16 @@ import InspectorModal from './components/InspectorModal';
 import ErrorBanner from './components/ErrorBanner';
 
 import { createVaultPipeline } from './lib/VaultQueue';
-import { connectDrive, getProfile, initAuth } from './lib/auth';
-import { uploadContainer, syncFromDrive, downloadContainer } from './lib/driveSync';
-import { getAllPhotos, getFileHash, addPhoto, exportContainerMetadata } from './lib/db';
+import { connectDrive, getProfile, initAuth, disconnectDrive } from './lib/auth';
+import { uploadContainer, syncFromDrive, downloadContainer, deleteContainerItem } from './lib/driveSync';
+import { getAllPhotos, getFileHash, addPhoto, exportContainerMetadata, clearDB, deletePhoto } from './lib/db';
 import { encodeContainer, extractFrame } from './lib/videoEncoder';
 import { analyzeVisualFeatures, isSameScene } from './lib/phash';
 
 const defaultServices = {
   encoder: { encodeContainer, extractFrame },
-  drive: { uploadContainer, syncFromDrive, downloadContainer },
-  db: { getFileHash, addPhoto, exportContainerMetadata },
+  drive: { uploadContainer, syncFromDrive, downloadContainer, deleteContainerItem },
+  db: { getFileHash, addPhoto, exportContainerMetadata, clearDB, deletePhoto },
   phash: { analyzeVisualFeatures, isSameScene },
   image: { createImageBitmap: (f) => window.createImageBitmap(f) }
 };
@@ -104,6 +104,21 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    let syncInterval;
+    if (profile && queueIdle) {
+      // Background Polling
+      syncInterval = setInterval(() => {
+        setIsSyncing(true);
+        services.drive.syncFromDrive(services.db.addPhoto, services.db.deletePhoto)
+          .then(async () => await loadData())
+          .catch(console.error)
+          .finally(() => setIsSyncing(false));
+      }, window.__E2E_SYNC_INTERVAL__ || 30000);
+    }
+    return () => clearInterval(syncInterval);
+  }, [profile, queueIdle]);
+
   const handleConnect = async () => {
     try {
       setError(null);
@@ -111,13 +126,21 @@ function App() {
       setProfile(getProfile());
       
       setIsSyncing(true);
-      await syncFromDrive(addPhoto);
+      await services.drive.syncFromDrive(services.db.addPhoto, services.db.deletePhoto);
       await loadData();
       setIsSyncing(false);
     } catch (err) {
       setError(err);
       setIsSyncing(false);
     }
+  };
+
+  const handleDisconnect = async () => {
+    disconnectDrive();
+    await clearDB();
+    setProfile(null);
+    setPhotos([]);
+    setTotalSavedBytes(0);
   };
 
   const handleFilesAdded = async (files) => {
@@ -191,11 +214,29 @@ function App() {
     }
   };
 
+  const handleDelete = async (photo) => {
+    try {
+      // 1. Optimistically remove from UI and Local DB
+      setPhotos(prev => prev.filter(p => p.id !== photo.id));
+      await services.db.deletePhoto(photo.id);
+      setSelectedPhoto(null);
+      
+      // 2. Sync tombstone to Drive
+      if (profile) {
+        await services.drive.deleteContainerItem(photo.hash || photo.id);
+      }
+    } catch (err) {
+      setError(err);
+      await loadData(); // rollback UI on failure
+    }
+  };
+
   return (
     <div className="app-container">
       <Header 
         profile={profile} 
         onConnect={handleConnect} 
+        onDisconnect={handleDisconnect}
         queueIdle={queueIdle} 
         totalSavedBytes={totalSavedBytes} 
       />
@@ -213,6 +254,7 @@ function App() {
           photo={selectedPhoto} 
           onClose={() => setSelectedPhoto(null)} 
           onDownload={handleDownload}
+          onDelete={handleDelete}
         />
       )}
     </div>

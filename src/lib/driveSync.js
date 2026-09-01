@@ -89,29 +89,66 @@ export async function uploadContainer(payload) {
 }
 
 /**
- * Recovers all photos from Google Drive metadata files.
+ * Uploads a tombstone file to indicate a photo has been deleted.
  */
-export async function syncFromDrive(addPhoto) {
+export async function deleteContainerItem(hash) {
   const folderId = await getVaultFolderId();
   
-  const query = `'${folderId}' in parents and name contains 'metadata_vault_' and trashed = false`;
+  const tombstoneBlob = new Blob([JSON.stringify({ deleted: true, hash })], { type: 'application/json' });
+  const tombstoneMetadata = {
+    name: `tombstone_${hash}.json`,
+    parents: [folderId]
+  };
+  
+  return uploadMultipart(tombstoneMetadata, tombstoneBlob);
+}
+
+/**
+ * Recovers all photos from Google Drive metadata files.
+ */
+export async function syncFromDrive(addPhoto, deletePhoto) {
+  const folderId = await getVaultFolderId();
+  
+  const query = `'${folderId}' in parents and (name contains 'metadata_vault_' or name contains 'tombstone_') and trashed = false`;
   const data = await searchFiles(query, 'files(id, name)');
   
   let restoredCount = 0;
   
+  // First, gather all tombstones
+  const tombstones = new Set();
+  
   for (const file of data.files) {
-    try {
-      const photos = await downloadFile(file.id, 'json');
-      for (const p of photos) {
-        try {
-          await addPhoto(p);
-          restoredCount++;
-        } catch (e) {
-          // ignore duplicate keys if already inserted
+    if (file.name.startsWith('tombstone_')) {
+      try {
+        const tombstoneData = await downloadFile(file.id, 'json');
+        if (tombstoneData.hash) {
+          tombstones.add(tombstoneData.hash);
+          if (deletePhoto) await deletePhoto(tombstoneData.hash);
         }
+      } catch (err) {
+        console.error(`Failed to sync tombstone file ${file.name}:`, err);
       }
-    } catch (err) {
-      console.error(`Failed to sync metadata file ${file.name}:`, err);
+    }
+  }
+
+  // Then process metadata, skipping tombstoned hashes
+  for (const file of data.files) {
+    if (file.name.startsWith('metadata_vault_')) {
+      try {
+        const photos = await downloadFile(file.id, 'json');
+        for (const p of photos) {
+          if (tombstones.has(p.hash)) continue;
+          
+          try {
+            await addPhoto(p);
+            restoredCount++;
+          } catch (e) {
+            // ignore duplicate keys if already inserted
+          }
+        }
+      } catch (err) {
+        console.error(`Failed to sync metadata file ${file.name}:`, err);
+      }
     }
   }
   

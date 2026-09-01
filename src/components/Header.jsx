@@ -1,6 +1,6 @@
-import { Cloud, CheckCircle, Loader } from 'lucide-react';
+import { Cloud, CheckCircle, Loader, LogOut } from 'lucide-react';
 
-export default function Header({ profile, onConnect, queueIdle, totalSavedBytes }) {
+export default function Header({ profile, onConnect, onDisconnect, queueIdle, totalSavedBytes }) {
   const savedMb = (totalSavedBytes / (1024 * 1024)).toFixed(2);
   
   return (
@@ -29,7 +29,9 @@ export default function Header({ profile, onConnect, queueIdle, totalSavedBytes 
               style={{ width: 32, height: 32, borderRadius: '50%' }} 
             />
             <span style={{ fontSize: '0.875rem', fontWeight: 500 }}>{profile.name}</span>
-            <CheckCircle size={16} color="var(--success)" />
+            <button className="btn icon-btn" onClick={onDisconnect} style={{ padding: '0.5rem', marginLeft: '0.5rem' }} title="Sign Out">
+              <LogOut size={16} />
+            </button>
           </div>
         ) : (
           <button className="btn" onClick={onConnect}>

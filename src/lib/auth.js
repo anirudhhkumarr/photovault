@@ -104,3 +104,9 @@ export function getAccessToken() {
 export function isAuthenticated() {
   return !!accessToken;
 }
+
+export function disconnectDrive() {
+  accessToken = null;
+  googleProfile = null;
+  sessionStorage.removeItem('photovault_auth');
+}

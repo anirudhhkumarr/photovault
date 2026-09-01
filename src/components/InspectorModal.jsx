@@ -1,7 +1,7 @@
-import { X, Download } from 'lucide-react';
+import { X, Download, Trash2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
-export default function InspectorModal({ photo, onClose, onDownload }) {
+export default function InspectorModal({ photo, onClose, onDownload, onDelete }) {
   const [imageSrc, setImageSrc] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -28,12 +28,17 @@ export default function InspectorModal({ photo, onClose, onDownload }) {
           <X size={24} />
         </button>
         
-        <div style={{ padding: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--glass-border)' }}>
+        <div style={{ padding: '1.5rem', paddingRight: '4rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--glass-border)' }}>
           <h2 style={{ fontSize: '1.25rem', fontWeight: 600 }}>{photo.originalName || 'Photo'}</h2>
-          <button className="btn" onClick={() => onDownload(photo)}>
-            <Download size={18} />
-            Download Original
-          </button>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button className="btn" onClick={() => onDownload(photo)}>
+              <Download size={18} />
+              Download
+            </button>
+            <button className="btn icon-btn" onClick={() => window.confirm('Delete photo?') && onDelete && onDelete(photo)} style={{ color: 'var(--danger)' }} title="Delete Photo">
+              <Trash2 size={18} />
+            </button>
+          </div>
         </div>
         
         <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '2rem', overflow: 'hidden' }}>

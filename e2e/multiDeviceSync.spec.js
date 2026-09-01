@@ -132,8 +132,8 @@ test.describe('Multi-device Sync Flow', () => {
       } else {
           // Normal file query in a folder
           resultFiles = mockDriveState.files.filter(f => f.mimeType !== 'application/vnd.google-apps.folder');
-          if (q.includes("name contains 'metadata_vault_'")) {
-              resultFiles = resultFiles.filter(f => f.name.includes('metadata_vault_'));
+          if (q.includes("name contains 'metadata_vault_'") || q.includes("name contains 'tombstone_'")) {
+              resultFiles = resultFiles.filter(f => f.name.includes('metadata_vault_') || f.name.includes('tombstone_'));
           }
       }
       
@@ -233,7 +233,7 @@ test.describe('Multi-device Sync Flow', () => {
     await expect(pageB.locator('.photo-card')).toHaveCount(1, { timeout: 10000 });
   });
 
-  test('Session persists across page reloads', async ({ browser }) => {
+  test('Session persists across page reloads and can sign out', async ({ browser }) => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await setupMockGoogleAPI(page);
@@ -249,5 +249,52 @@ test.describe('Multi-device Sync Flow', () => {
 
     // Verify user is still logged in without clicking connect
     await expect(page.locator('text=Test User')).toBeVisible({ timeout: 5000 });
+    
+    // Sign Out
+    await page.click('button[title="Sign Out"]');
+    await expect(page.locator('button:has-text("Connect Drive")')).toBeVisible();
+    
+    // Reload again, should stay logged out
+    await page.reload();
+    await expect(page.locator('button:has-text("Connect Drive")')).toBeVisible();
+  });
+
+  test('Background Polling and Deletion Sync', async ({ browser }) => {
+    const contextA = await browser.newContext();
+    const pageA = await contextA.newPage();
+    
+    // Speed up background polling for tests
+    await pageA.addInitScript(() => { window.__E2E_SYNC_INTERVAL__ = 2000; });
+    await setupMockGoogleAPI(pageA);
+    await pageA.goto('/');
+    
+    await pageA.click('button:has-text("Connect Drive")');
+    
+    const [fileChooser] = await Promise.all([
+      pageA.waitForEvent('filechooser'),
+      pageA.click('button:has-text("Select Files")')
+    ]);
+    await fileChooser.setFiles('e2e/fixtures/test-photo.jpg');
+    await expect(pageA.locator('.photo-card')).toHaveCount(1, { timeout: 15000 });
+
+    const contextB = await browser.newContext();
+    const pageB = await contextB.newPage();
+    await pageB.addInitScript(() => { window.__E2E_SYNC_INTERVAL__ = 2000; });
+    await setupMockGoogleAPI(pageB);
+    await pageB.goto('/');
+    
+    await pageB.click('button:has-text("Connect Drive")');
+    await expect(pageB.locator('.photo-card')).toHaveCount(1, { timeout: 10000 });
+
+    // Device A deletes the photo
+    await pageA.click('.photo-card');
+    pageA.on('dialog', dialog => dialog.accept()); // Accept confirm alert
+    await pageA.click('button[title="Delete Photo"]');
+    
+    // Photo should be removed from Device A UI
+    await expect(pageA.locator('.photo-card')).toHaveCount(0);
+    
+    // Device B should automatically delete the photo via background polling without reload!
+    await expect(pageB.locator('.photo-card')).toHaveCount(0, { timeout: 15000 });
   });
 });

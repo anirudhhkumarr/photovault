@@ -79,8 +79,10 @@ export async function encodeContainer(items) {
     const ctx = canvas.getContext('2d');
     ctx.drawImage(bitmap, 0, 0, width, height);
 
-    const frame = new VideoFrame(canvas, { timestamp: i * 1000000 }); // 1.0s = 1000000us
-    
+    const frame = new VideoFrame(canvas, { 
+      timestamp: i * 1000000, 
+      duration: 1000000 // explicitly 1.0s to prevent missing duration on last frame
+    });
     encoder.encode(frame, { keyFrame: true });
     frame.close();
     bitmap.close();

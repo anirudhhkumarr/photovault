@@ -39,7 +39,6 @@ function App() {
   const loadingVaultsRef = useRef(new Set());
   
   const photoInputRef = useRef(null);
-  const videoInputRef = useRef(null);
 
   // Load photos from DB on mount
   const loadData = async () => {
@@ -398,7 +397,6 @@ function App() {
         queueIdle={queueIdle} 
         totalSavedBytes={totalSavedBytes} 
         onUploadPhotos={() => photoInputRef.current?.click()}
-        onUploadVideos={() => videoInputRef.current?.click()}
       />
       
       {/* Hidden File Inputs */}
@@ -412,18 +410,6 @@ function App() {
           if (e.target.files && e.target.files.length > 0) {
             handleFilesAdded(Array.from(e.target.files));
           }
-          e.target.value = '';
-        }}
-      />
-      <input 
-        type="file" 
-        ref={videoInputRef} 
-        style={{ display: 'none' }} 
-        multiple 
-        accept="video/*"
-        onChange={(e) => {
-          // TODO: Implement video deduplication pipeline
-          alert("Video uploads are coming soon! We are building a robust WebCodecs pipeline to deduplicate and compress your raw videos.");
           e.target.value = '';
         }}
       />

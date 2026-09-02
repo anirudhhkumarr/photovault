@@ -36,7 +36,7 @@ export async function loadGis() {
 }
 
 export function initAuth() {
-  const stored = sessionStorage.getItem('photovault_auth');
+  const stored = localStorage.getItem('photovault_auth');
   if (stored) {
     try {
       const data = JSON.parse(stored);
@@ -45,7 +45,7 @@ export function initAuth() {
         googleProfile = data.profile;
         return true;
       } else {
-        sessionStorage.removeItem('photovault_auth');
+        localStorage.removeItem('photovault_auth');
       }
     } catch (e) {
       console.error('Failed to parse auth data', e);
@@ -76,7 +76,7 @@ export async function connectDrive() {
         
         const expiresIn = resp.expires_in || 3600;
         const expiresAt = Date.now() + (expiresIn * 1000);
-        sessionStorage.setItem('photovault_auth', JSON.stringify({
+        localStorage.setItem('photovault_auth', JSON.stringify({
           accessToken,
           profile: googleProfile,
           expiresAt
@@ -108,5 +108,5 @@ export function isAuthenticated() {
 export function disconnectDrive() {
   accessToken = null;
   googleProfile = null;
-  sessionStorage.removeItem('photovault_auth');
+  localStorage.removeItem('photovault_auth');
 }

@@ -47,6 +47,11 @@ export async function addPhoto(photo) {
   return db.put('photos', photo);
 }
 
+export async function getPhoto(id) {
+  const db = await initDB();
+  return db.get('photos', id);
+}
+
 export async function getAllPhotos() {
   const db = await initDB();
   return db.getAll('photos');

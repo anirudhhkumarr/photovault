@@ -445,7 +445,7 @@ function App() {
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', textAlign: 'center' }}>
           <h1 style={{ fontSize: '3rem', fontWeight: 700, marginBottom: '1rem', background: 'linear-gradient(135deg, var(--primary), var(--accent-color))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>PhotoVault</h1>
           <p style={{ fontSize: '1.25rem', color: 'var(--text-muted)', marginBottom: '2.5rem', maxWidth: '600px', lineHeight: 1.6 }}>
-            Connect your Google Drive to securely back up, deduplicate, and organize your photos using advanced visual clustering.
+            Connect your Google Drive to securely back up, deduplicate, and organize your photos.
           </p>
           <button className="btn" onClick={handleConnect} style={{ fontSize: '1.125rem', padding: '0.75rem 2rem', borderRadius: '12px' }}>
              Connect Google Drive

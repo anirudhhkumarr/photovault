@@ -37,6 +37,7 @@ function App() {
   const [uploadStats, setUploadStats] = useState({ active: false, completed: 0, total: 0 });
   const photoUpdatesQueue = useRef(new Map());
   const loadingVaultsRef = useRef(new Set());
+  const containerCacheRef = useRef(new Map());
   
   const photoInputRef = useRef(null);
 
@@ -321,7 +322,20 @@ function App() {
 
   const handleFetchFullRes = async (photo) => {
     try {
-      const { blob } = await services.drive.downloadContainer(photo.videoId);
+      let blob;
+      if (containerCacheRef.current.has(photo.videoId)) {
+        blob = containerCacheRef.current.get(photo.videoId);
+      } else {
+        const res = await services.drive.downloadContainer(photo.videoId);
+        blob = res.blob;
+        
+        containerCacheRef.current.set(photo.videoId, blob);
+        // Prevent memory leak by keeping max 3 containers in memory (~30MB)
+        if (containerCacheRef.current.size > 3) {
+          const oldestKey = containerCacheRef.current.keys().next().value;
+          containerCacheRef.current.delete(oldestKey);
+        }
+      }
       return await services.encoder.extractFrame(blob, photo.frameIndex, photo.mimeType);
     } catch (err) {
       console.error('Failed to fetch full res', err);

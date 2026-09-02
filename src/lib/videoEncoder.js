@@ -123,6 +123,8 @@ export function extractFrame(videoBlob, frameIndex, mimeType) {
     const url = URL.createObjectURL(videoBlob);
     video.src = url;
     video.muted = true;
+    video.playsInline = true;
+    video.preload = 'auto';
     
     const safeTime = frameIndex + 0.5; // center of the frame duration
     

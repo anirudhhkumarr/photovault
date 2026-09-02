@@ -239,7 +239,8 @@ export async function downloadContainer(containerId) {
   }
   
   const file = data.files[0];
-  const blob = await downloadFile(file.id, 'blob');
+  const rawBlob = await downloadFile(file.id, 'blob');
+  const blob = new Blob([rawBlob], { type: file.mimeType });
   
   return { blob, mimeType: file.mimeType };
 }

@@ -128,12 +128,18 @@ export function extractFrame(videoBlob, frameIndex, mimeType) {
     
     const safeTime = frameIndex + 0.5; // center of the frame duration
     
+    // Append to DOM (required for Safari to reliably process Blob URLs)
+    video.style.display = 'none';
+    document.body.appendChild(video);
+    
     const cleanup = () => {
       video.removeEventListener('seeked', onSeeked);
       video.removeEventListener('error', onError);
       video.src = '';
       video.load();
-      video.remove();
+      if (document.body.contains(video)) {
+        document.body.removeChild(video);
+      }
       URL.revokeObjectURL(url);
     };
 

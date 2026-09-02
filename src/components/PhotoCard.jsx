@@ -3,16 +3,15 @@ import { Maximize2 } from 'lucide-react';
 
 export default function PhotoCard({ photo, onClick, onLazyLoad }) {
   const [isVisible, setIsVisible] = useState(false);
+  const [objectUrl, setObjectUrl] = useState(null);
   const cardRef = useRef(null);
-  const lazyLoadTriggered = useRef(false);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
           setIsVisible(true);
-          if (photo.isSkeleton && onLazyLoad && !lazyLoadTriggered.current) {
-            lazyLoadTriggered.current = true;
+          if (photo.isSkeleton && onLazyLoad) {
             onLazyLoad(photo);
           }
           if (!photo.isSkeleton) {
@@ -30,9 +29,16 @@ export default function PhotoCard({ photo, onClick, onLazyLoad }) {
     return () => observer.disconnect();
   }, [photo, onLazyLoad]);
 
+  useEffect(() => {
+    if (photo.isSkeleton && photo.file) {
+      const url = URL.createObjectURL(photo.file);
+      setObjectUrl(url);
+      return () => URL.revokeObjectURL(url);
+    }
+  }, [photo.isSkeleton, photo.file]);
+
   if (photo.isSkeleton) {
     const isUpload = !!photo.file;
-    const objectUrl = isUpload ? URL.createObjectURL(photo.file) : null;
     
     return (
       <div className="photo-card skeleton" ref={cardRef}>

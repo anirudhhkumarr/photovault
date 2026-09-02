@@ -46,6 +46,7 @@ export async function analyzeVisualFeatures(file) {
   const sx = (width - size) / 2;
   const sy = (height - size) / 2;
   ctx.drawImage(bitmap, sx, sy, size, size, 0, 0, 64, 64);
+  bitmap.close();
   
   const imageData = ctx.getImageData(0, 0, 64, 64);
   const data = imageData.data;

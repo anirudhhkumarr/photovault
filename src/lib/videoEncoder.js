@@ -83,9 +83,11 @@ export async function encodeContainer(items) {
     
     encoder.encode(frame, { keyFrame: true });
     frame.close();
+    bitmap.close();
   }
 
   await encoder.flush();
+  encoder.close();
   muxer.finalize();
 
   const buffer = target.buffer;

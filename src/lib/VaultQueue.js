@@ -51,6 +51,7 @@ export function createVaultPipeline(services) {
       ...features,
       skeletonId: task.payload.skeletonId
     };
+    bitmap.close();
     
     context.queue.complete(task.id, photoData);
   });

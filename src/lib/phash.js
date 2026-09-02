@@ -105,8 +105,8 @@ export async function analyzeVisualFeatures(file) {
   // Normalize Histogram
   for (let i = 0; i < 32; i++) hsvHist[i] /= totalPixels;
 
-  // Extract Thumbnail (Retina, 1440px)
-  const thumbSize = 1440;
+  // Extract Thumbnail (Grid optimized, 320px)
+  const thumbSize = 320;
   const thumbScale = Math.min(thumbSize / width, thumbSize / height);
   const tw = width * thumbScale;
   const th = height * thumbScale;

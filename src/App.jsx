@@ -392,7 +392,7 @@ function App() {
       const photos = await services.drive.fetchVaultMetadata(photo.metaFileId);
       await services.db.deleteVaultSkeletons(photo.videoId);
       for (const p of photos) {
-        await services.db.addPhoto({ ...p, videoId: photo.videoId, syncStatus: 'synced' });
+        await services.db.addPhoto({ ...p, syncStatus: 'synced' });
       }
       await loadData();
     } catch (err) {

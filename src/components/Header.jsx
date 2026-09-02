@@ -1,6 +1,6 @@
-import { Cloud, CheckCircle, Loader, LogOut, RefreshCw } from 'lucide-react';
+import { Cloud, CheckCircle, Loader, LogOut, RefreshCw, ImagePlus, Video } from 'lucide-react';
 
-export default function Header({ profile, onConnect, onDisconnect, onSync, queueIdle, totalSavedBytes }) {
+export default function Header({ profile, onConnect, onDisconnect, onSync, queueIdle, totalSavedBytes, onUploadPhotos, onUploadVideos }) {
   const savedMb = (totalSavedBytes / (1024 * 1024)).toFixed(2);
   
   return (
@@ -31,7 +31,18 @@ export default function Header({ profile, onConnect, onDisconnect, onSync, queue
         )}
         
         {profile ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <button className="btn" onClick={onUploadPhotos} style={{ padding: '0.5rem 1rem', borderRadius: '999px', fontSize: '0.875rem' }}>
+              <ImagePlus size={16} />
+              Photos
+            </button>
+            <button className="btn" onClick={onUploadVideos} style={{ padding: '0.5rem 1rem', borderRadius: '999px', fontSize: '0.875rem', backgroundColor: 'var(--glass-bg)', border: '1px solid var(--glass-border)', color: 'var(--text-color)' }}>
+              <Video size={16} />
+              Videos
+            </button>
+            
+            <div style={{ width: '1px', height: '24px', backgroundColor: 'var(--glass-border)', margin: '0 0.5rem' }}></div>
+            
             <button className="btn icon-btn" onClick={onSync} disabled={!queueIdle} style={{ padding: '0.5rem' }} title="Sync with Drive">
               <RefreshCw size={16} />
             </button>

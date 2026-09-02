@@ -7,14 +7,14 @@ import ErrorBanner from './components/ErrorBanner';
 import { createVaultPipeline } from './lib/VaultQueue';
 import { connectDrive, getProfile, initAuth, disconnectDrive } from './lib/auth';
 import { uploadContainer, syncFromDrive, downloadContainer, deleteContainerItem, fetchVaultMetadata } from './lib/driveSync';
-import { getAllPhotos, getFileHash, addPhoto, exportContainerMetadata, clearDB, deletePhoto, addVideo, getVideo, deleteVideo, getAllVideos, initDB, deleteVaultSkeletons } from './lib/db';
+import { getAllPhotos, getFileHash, getPhoto, addPhoto, exportContainerMetadata, clearDB, deletePhoto, addVideo, getVideo, deleteVideo, getAllVideos, initDB, deleteVaultSkeletons } from './lib/db';
 import { encodeContainer, extractFrame } from './lib/videoEncoder';
 import { analyzeVisualFeatures, isSameScene } from './lib/phash';
 
 const defaultServices = {
   encoder: { encodeContainer, extractFrame },
   drive: { uploadContainer, syncFromDrive, downloadContainer, deleteContainerItem, fetchVaultMetadata },
-  db: { getAllPhotos, getFileHash, addPhoto, exportContainerMetadata, clearDB, deletePhoto, addVideo, getVideo, deleteVideo, getAllVideos, initDB, deleteVaultSkeletons },
+  db: { getAllPhotos, getFileHash, getPhoto, addPhoto, exportContainerMetadata, clearDB, deletePhoto, addVideo, getVideo, deleteVideo, getAllVideos, initDB, deleteVaultSkeletons },
   phash: { analyzeVisualFeatures, isSameScene },
   image: { createImageBitmap: (f) => window.createImageBitmap(f) }
 };

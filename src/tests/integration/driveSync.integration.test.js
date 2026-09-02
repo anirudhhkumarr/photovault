@@ -57,25 +57,22 @@ describe('QA Edge Cases: Google Drive Sync', () => {
   });
 
   describe('syncFromDrive Edge Cases', () => {
-    it('gracefully handles corrupted JSON metadata and continues syncing other files', async () => {
+    it('gracefully handles addPhoto failures and continues creating skeletons for other files', async () => {
       vi.mocked(searchFiles).mockResolvedValueOnce({ files: [{ id: 'folder1' }] });
       vi.mocked(searchFiles).mockResolvedValueOnce({ files: [
-        { id: 'meta1', name: 'metadata_vault_1.json' },
-        { id: 'meta2', name: 'metadata_vault_2.json' }
+        { id: 'meta1', name: 'metadata_vault_1690000000_1_abc.json' },
+        { id: 'meta2', name: 'metadata_vault_1690000000_2_def.json' }
       ] });
       
-      // Download 1 fails (Invalid JSON)
-      vi.mocked(downloadFile).mockRejectedValueOnce(new Error('Invalid JSON'));
-      
-      // Download 2 succeeds
-      vi.mocked(downloadFile).mockResolvedValueOnce([{ id: 'valid_photo' }]);
-      
-      const addPhotoMock = vi.fn();
+      const addPhotoMock = vi.fn()
+        .mockRejectedValueOnce(new Error('DB Error')) // Fails for the 1st skeleton of meta1
+        .mockResolvedValue(); // Succeeds for the 2 skeletons of meta2
+        
       const count = await driveSync.syncFromDrive(addPhotoMock);
       
-      // Even though meta1 failed, meta2 should succeed, resulting in 1 synced photo
-      expect(count).toBe(1);
-      expect(addPhotoMock).toHaveBeenCalledWith({ id: 'valid_photo' });
+      // Even though the first skeleton failed to save, it should continue and save the next 2.
+      expect(count).toBe(2);
+      expect(addPhotoMock).toHaveBeenCalledTimes(3);
     });
   });
 

@@ -2,9 +2,7 @@ import { Muxer as Mp4Muxer, ArrayBufferTarget as Mp4Target } from 'mp4-muxer';
 import { Muxer as WebmMuxer, ArrayBufferTarget as WebmTarget } from 'webm-muxer';
 
 // Align to 16 for hardware encoders
-function align16(val) {
-  return Math.floor(val / 16) * 16;
-}
+const align16 = (x) => Math.max(16, Math.floor(x / 16) * 16);
 
 export async function checkCodecSupport() {
   const hevcCodec = 'hvc1.1.6.L186.B0'; // HEVC Main Profile Level 6.2

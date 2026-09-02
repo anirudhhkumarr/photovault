@@ -87,7 +87,7 @@ export default function PhotoCard({ photo, onClick, onLazyLoad }) {
       )}
       <div className="photo-card-overlay">
         <div style={{ fontSize: '0.85rem', fontWeight: 600, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', color: 'white' }}>
-          {photo.originalName}
+          {photo.originalName || photo.filename}
         </div>
         <Maximize2 size={18} color="white" style={{ opacity: 0.8 }} />
       </div>
